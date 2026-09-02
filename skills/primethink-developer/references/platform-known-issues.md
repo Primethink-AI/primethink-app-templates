@@ -130,6 +130,14 @@ call and no server-side job the app owns, so a long job dies with the tab if the
 it inline. **Workaround:** fire-and-forget — post a hidden message, record the `task_id` in
 ChatDB, and let the app pick the result up when the reply arrives (also on a later load).
 
+### PC-07 — `pt.list` accepts at most 20 entity names per call
+**Severity:** MEDIUM
+
+The `list` action rejects a request naming more than 20 entity types with
+"Too many entity names (max 20)". An app whose entity vocabulary grows past 20 breaks on its
+full refresh the day the 21st type is added — App Studio hit this at 23. **Workaround:** chunk
+the names (≤20 per call) and merge the results client-side; never assume the cap will be raised.
+
 ---
 
 *When a new incident produces a durable lesson, add an entry here first, then link it from
