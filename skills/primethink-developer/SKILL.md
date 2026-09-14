@@ -158,6 +158,11 @@ mkdir -p /documents/app
 cp -R dist/. /documents/app/
 ```
 
+**Do not attempt a pull request from the sandbox.** It typically has no git remote and no
+valid GitHub token, so `gh auth status` only burns a cycle. PRs are available exclusively to
+`github_repo`-target projects with configured access; for a `live_app` build, report the local
+commit hash and the workspace path and let the handoff take it from there.
+
 Before deployment, confirm `dist/index.html` exists and keep the output flat. The default template's build runs `scripts/verify-dist.mjs`, which rejects nested output and root-absolute asset URLs. Vite 8 requires Node `20.19+` or `22.12+`. The CLI itself intentionally does not run `npm install`, build commands, or generated code.
 
 Read `references/developer-guide/compiled-live-apps.md` for variants, safety constraints, custom catalogs, and the no-build deployment path.
@@ -230,7 +235,8 @@ Those toggles survive re-publishing: an update run (`--task-id`) only PATCHes `n
 `description`, `goal`, `initial_prompt`, `virtual_assistant_id`, and `page_type`.
 
 `pt live-app publish` additionally creates the task with `page_type: html`, creates a task
-version (`--version-name`, default `Production`), syncs the app files into the task's `@app`
+version (`--version-name`, default `Production` — the value must be exactly `Production` or
+`Draft`; anything else is rejected with a 422), syncs the app files into the task's `@app`
 folder, and uploads `.image.png` when present. A failed version creation is only a
 `Warning:` — the publish still succeeds. Failed **file** uploads are fatal and are reported
 together after the summary line.
@@ -290,6 +296,9 @@ there is no task.
   `index.html`/`canvas.html` entry, a non-flat artifact, or per-file upload failures).
 - The chat URL host is derived from the active profile's API URL (`api.` → `app.`); override
   with `--web-url`. `--open` launches a browser, so skip it in CI.
+- **`--version-name` takes only `Production` or `Draft`.** It is not a free-text label: a
+  ticket or build name (`--version-name "T-001 v1"`) fails the publish with a 422. Track your
+  own version identity in `AGENTS.md` or the release notes, not in this flag.
 - `pt live-app test` uploads to `chats/<id>` and `pt live-app publish` to `tasks/<id>`, but
   both land in the `@app` folder of their owner.
 - These commands publish a **local project directory**. Inside a Deep1 sandbox you deploy by
