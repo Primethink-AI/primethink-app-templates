@@ -73,8 +73,20 @@
         'document_change', 'chat_db_updated', 'collection_db_updated', 'reaction'
       ];
 
+      // WebSocket only — never HTTP long-polling.
+      //
+      // The API runs multiple replicas and engine.io keeps its transport
+      // sessions in a per-process dict (engineio/async_server.py: `self.sockets`).
+      // The AsyncRedisManager shares *emits* across pods, not sessions, so a
+      // polling request whose sid was minted on another pod is answered with
+      // 400 "Invalid session <sid>". Without sticky routing that breaks roughly
+      // half of all polls. A websocket is a single connection pinned to one pod
+      // for its lifetime, so it sidesteps the problem entirely; if that pod goes
+      // away the client reconnects and re-joins below. This matches what the
+      // Flutter client has always done (socket_io.service.dart).
       var socketOpts = {
-        auth: { token: this.scopedToken }
+        auth: { token: this.scopedToken },
+        transports: ['websocket']
       };
       // When basePath is set (e.g. '/proxy'), use it as Socket.IO path prefix
       // so socket traffic routes through the same proxy as REST calls
@@ -1419,10 +1431,21 @@
         const result = await response.json();
 
         if (!response.ok) {
-          // Server returned an error response
-          const errorMsg = result.error || result.detail || 'Action failed';
+          // Server returned an error response. `detail` may be a structured
+          // validation error ({code, message, ...}) - surface its code and
+          // message rather than stringifying the object into "[object Object]".
+          const detail = result.detail;
+          let errorMsg = result.error;
+          if (!errorMsg && detail && typeof detail === 'object' && detail.message) {
+            errorMsg = detail.code ? `${detail.code}: ${detail.message}` : detail.message;
+          }
+          errorMsg = errorMsg || (typeof detail === 'string' ? detail : null) || 'Action failed';
           console.error('pt.action error response:', result);
-          throw new Error(errorMsg);
+          const error = new Error(errorMsg);
+          if (detail && typeof detail === 'object' && detail.code) {
+            error.code = detail.code;
+          }
+          throw error;
         }
 
         if (!result.success) {
@@ -2567,13 +2590,25 @@
 
     /**
      * Save content as a document in the chat
-     * @param {string} filename - Filename with extension (e.g., 'report.pdf')
+     * @param {string} filename - Filename WITH extension and WITHOUT any folder path (e.g., 'report.pdf').
+     *                            A filename containing '/' or '\\' is rejected (INVALID_DOCUMENT_FILENAME);
+     *                            put the destination path in the `folder` argument instead.
      * @param {string} format - Document format: 'TXT', 'MD', 'HTML', 'DOCX', 'PDF', 'CSV', 'XLSX', 'CUSTOM'
      * @param {string} mimetype - MIME type (e.g., 'text/plain', 'application/pdf')
      * @param {string} content - Document content
-     * @param {string} folder - Optional folder path (e.g., 'reports', 'exports/monthly'). Created automatically if it does not exist.
+     * @param {string} folder - Optional destination folder path (e.g., 'specs', 'specs/diagram', 'exports/monthly',
+     *                          or a special root such as '@public' / '@liveapp'). Nested folders are created
+     *                          automatically when missing.
      * @param {string} attachmentMode - Optional document status in the chat relationship. One of: 'archived', 'search', 'attached', 'context'. Defaults to 'archived'.
      * @returns {Promise<object>} Result with success status, filename, and documents array
+     * @throws {Error} If filename is not a basename (contains a folder separator, is '.'/'..',
+     *                 is an absolute path, or is empty/whitespace-only)
+     *
+     * Filename vs folder:
+     * - filename is a BASENAME: 'flow.mmd'
+     * - folder is the destination path: 'specs/diagram'
+     * - pt.saveDocument('specs/diagram/flow.mmd', ...) is REJECTED — it is not split for you,
+     *   because silently converting a name into a path would hide malformed or unsafe input.
      *
      * Format guidelines:
      * - TXT: Plain text (no Markdown)
@@ -2618,7 +2653,7 @@
      * );
      *
      * @example
-     * // Save to a specific folder
+     * // Save to a specific folder (missing folders are created automatically)
      * await pt.saveDocument(
      *   'monthly-report.pdf',
      *   'PDF',
@@ -2626,6 +2661,20 @@
      *   '# Report\n\nContent...',
      *   'reports/2025/Q1'
      * );
+     *
+     * @example
+     * // Nested folders: pass the basename and the folder separately
+     * await pt.saveDocument(
+     *   'flow.mmd',
+     *   'CUSTOM',
+     *   'text/plain',
+     *   'graph TD; A-->B;',
+     *   'specs/diagram'
+     * );
+     *
+     * @example
+     * // WRONG - throws INVALID_DOCUMENT_FILENAME, creates nothing
+     * // await pt.saveDocument('specs/diagram/flow.mmd', 'CUSTOM', 'text/plain', content);
      *
      * @example
      * // Save a document and make it immediately searchable by AI
@@ -2641,6 +2690,27 @@
     saveDocument: async function(filename, format, mimetype, content, folder = null, attachmentMode = null) {
       if (!filename || typeof filename !== 'string') {
         throw new Error('filename must be a non-empty string');
+      }
+      // filename is a basename, never a path: mirror the server-side
+      // INVALID_DOCUMENT_FILENAME rule so a Live App gets the error immediately
+      // instead of a round trip. The name is never split into folder + basename
+      // here either — the caller must pass the destination in `folder`.
+      const trimmedFilename = filename.trim();
+      const INVALID_FILENAME_MESSAGE = 'filename must be a basename without folder separators; ' +
+        'pass the destination path using the folder parameter';
+      if (
+        !trimmedFilename ||
+        trimmedFilename.includes('/') ||
+        trimmedFilename.includes('\\') ||
+        trimmedFilename === '.' ||
+        trimmedFilename === '..' ||
+        /^[A-Za-z]:/.test(trimmedFilename) ||
+        // Unicode control characters (category Cc): C0, DEL and C1 — the same
+        // set the server rejects in document_filename_utils._is_control.
+        // eslint-disable-next-line no-control-regex
+        /[\x00-\x1f\x7f-\x9f]/.test(trimmedFilename)
+      ) {
+        throw new Error(`INVALID_DOCUMENT_FILENAME: ${INVALID_FILENAME_MESSAGE}`);
       }
       if (!format || typeof format !== 'string') {
         throw new Error('format must be a non-empty string');
@@ -2658,7 +2728,7 @@
       }
 
       const params = {
-        filename: filename,
+        filename: trimmedFilename,
         format: format,
         mimetype: mimetype,
         content: content
