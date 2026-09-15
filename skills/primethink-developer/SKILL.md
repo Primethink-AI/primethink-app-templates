@@ -347,8 +347,10 @@ Other things worth knowing before you build a plan:
   group; for a genuine multi-turn case keep its items adjacent. Because the default is `1`,
   a plan built without passing `--chat-group` collapses into a single N-turn conversation.
 - **Always set an evaluator agent before any run:**
-  `pt eval settings <task_id> --evaluator-agent-id <id>` (optionally `--pass-threshold`, a
-  **float 0–1**). The API rejects a run with 400 *"doesn't have a default evaluator agent ID"*
+  `pt eval settings <task_id> --evaluator-agent-id <id>` (optionally `--pass-threshold`, an
+  **integer 1–100** — pass `80` for an 80% gate, not `0.8`. The CLI declares this option as a
+  float, but the API schema is `conint(gt=0, le=100)`, so a fractional value is rejected and
+  `1` means one percent). The API rejects a run with 400 *"doesn't have a default evaluator agent ID"*
   **regardless of item types** — an `exact`- or `similar`-only plan fails the same way, and a
   per-item evaluator does not satisfy it. Prefer a purpose-built evaluator over borrowing an
   unrelated agent: a reviewer or persona agent brings its own instructions into the judgement.

@@ -253,15 +253,29 @@ Two traps, both easy to hit:
 In Playwright, attach the header **only to requests for the PrimeThink host**:
 
 ```python
+from urllib.parse import urlsplit
+
 host = "https://app-dev.primethink.ai"
 
-# Scope the credential with page.route — do NOT use
-# context.set_extra_http_headers({"Authorization": ...}), which attaches the key to
-# EVERY request the context makes, including third-party origins. The served page
-# loads https://cdn.socket.io/..., so a context-wide header sends a long-lived PT
-# API key to a CDN.
+def _origin(url):
+    """(scheme, hostname, effective port) — the only safe basis for comparison."""
+    parts = urlsplit(url)
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    return (parts.scheme, (parts.hostname or "").lower(), port)
+
+_TRUSTED = _origin(host)
+
+# Scope the credential with page.route. Do NOT use
+# context.set_extra_http_headers({"Authorization": ...}) — that attaches the key to
+# EVERY request the context makes, including third-party origins, and the served
+# page loads https://cdn.socket.io/..., so it would send a long-lived PT API key
+# to a CDN.
+#
+# Compare PARSED ORIGINS, never a string prefix: `url.startswith(host)` also matches
+# https://app-dev.primethink.ai.evil.example/ and https://app-dev.primethink.ai:8443/,
+# which would leak the key to a lookalike host (CWE-346).
 def _authorize(route, request):
-    if request.url.startswith(host):
+    if _origin(request.url) == _TRUSTED:
         route.continue_(headers={**request.headers, "Authorization": f"Token {api_key}"})
     else:
         route.continue_()
@@ -269,6 +283,9 @@ def _authorize(route, request):
 page.route("**/*", _authorize)
 page.goto(f"{host}/api/v1/live/{chat_uuid}")
 ```
+
+Redirects inherit overridden headers, so if the endpoint ever redirects off-host,
+follow it manually rather than letting the header ride along.
 
 The `pt` runtime's own API calls do not need this header — it authenticates with the
 `X-CSRF-Token` / `X-Scoped-Token` pair the page was served with, so the header is only
@@ -294,7 +311,23 @@ screen proves nothing — an in-memory `useState` implementation passes it too. 
 persistence scenario by reloading and re-asserting.
 
 **The runner has no `reload` action.** Re-navigate to the same URL instead, and note the
-assertion is `expect_visible` (not `assert_visible`):
+assertion is `expect_visible` (not `assert_visible`).
+
+> ⚠️ **A plan cannot navigate to `/api/v1/live/<uuid>` on its own.** That document requires
+> an `Authorization` header, and the runner cannot send one — a saved `--storage-state`
+> session carries cookies, not the header, and `localStorage` seeding does not authenticate
+> the document request either. So the re-navigation below would land on an unauthenticated
+> page and the assertion would fail for the wrong reason.
+>
+> Two ways to run a persistence check today:
+>
+> 1. **Custom Playwright script** (preferred) — use the `page.route` pattern above, then
+>    `page.goto(url)` a second time and re-assert. This is the only route that exercises the
+>    real runtime.
+> 2. **Plan + `--storage-state`** against a URL the saved session can open, accepting that
+>    you are testing the frontend runner rather than the API endpoint.
+
+Shape of the check, once authentication is sorted:
 
 ```yaml
 - id: persist.add
@@ -302,7 +335,7 @@ assertion is `expect_visible` (not `assert_visible`):
   target: { role: button, name: "Add card" }
 - id: persist.reload
   action: navigate           # re-navigating the same URL is the reload
-  url: /api/v1/live/25189fe0-aacf-4205-80f3-bb0d98d04be5
+  url: /                     # resolved against base_url; see the warning above
 - id: persist.still-there
   action: expect_visible
   target: { text: "My new card" }
