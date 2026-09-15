@@ -250,12 +250,29 @@ Two traps, both easy to hit:
   sign-in wall; an API key will not open it. Always use the `/api/v1/` form for
   automated testing.
 
-In Playwright, set the header before the first navigation:
+In Playwright, attach the header **only to requests for the PrimeThink host**:
 
 ```python
-context.set_extra_http_headers({"Authorization": f"Token {api_key}"})
+host = "https://app-dev.primethink.ai"
+
+# Scope the credential with page.route — do NOT use
+# context.set_extra_http_headers({"Authorization": ...}), which attaches the key to
+# EVERY request the context makes, including third-party origins. The served page
+# loads https://cdn.socket.io/..., so a context-wide header sends a long-lived PT
+# API key to a CDN.
+def _authorize(route, request):
+    if request.url.startswith(host):
+        route.continue_(headers={**request.headers, "Authorization": f"Token {api_key}"})
+    else:
+        route.continue_()
+
+page.route("**/*", _authorize)
 page.goto(f"{host}/api/v1/live/{chat_uuid}")
 ```
+
+The `pt` runtime's own API calls do not need this header — it authenticates with the
+`X-CSRF-Token` / `X-Scoped-Token` pair the page was served with, so the header is only
+needed to get the document itself.
 
 Assert the runtime exists before anything else — a page that loaded without `pt` fails
 every ChatDB assertion for the wrong reason, which is a slow and confusing way to debug:
@@ -264,20 +281,30 @@ every ChatDB assertion for the wrong reason, which is a slow and confusing way t
 assert page.evaluate("typeof window.pt !== 'undefined'"), "pt runtime missing — check auth/URL"
 ```
 
+> **The bundled `run_plan.py` cannot do this yet.** It only seeds a token into
+> `localStorage` (`auth:` in the plan) or replays a `--storage-state` session; there is no
+> header support. Until that is added, drive the API-key route from a short Playwright
+> script as above, or use `--storage-state`. Do not write a plan that navigates to
+> `/api/v1/live/<uuid>` and expect the runner to authenticate it — it will not.
+
 ### Persistence must be tested with a reload
 
 The point of ChatDB is that state survives. A test that adds a row and asserts it is on
 screen proves nothing — an in-memory `useState` implementation passes it too. Always end a
-persistence scenario with a reload and re-assert:
+persistence scenario by reloading and re-asserting.
+
+**The runner has no `reload` action.** Re-navigate to the same URL instead, and note the
+assertion is `expect_visible` (not `assert_visible`):
 
 ```yaml
 - id: persist.add
   action: click
   target: { role: button, name: "Add card" }
 - id: persist.reload
-  action: reload
+  action: navigate           # re-navigating the same URL is the reload
+  url: /api/v1/live/25189fe0-aacf-4205-80f3-bb0d98d04be5
 - id: persist.still-there
-  action: assert_visible
+  action: expect_visible
   target: { text: "My new card" }
 ```
 

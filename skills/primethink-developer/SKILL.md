@@ -340,21 +340,27 @@ looks broken:
 
 Other things worth knowing before you build a plan:
 
-- **`chat_group` groups multi-turn items.** Items sharing a `chat_group` run as one
-  conversation in one chat. For N independent single-turn tests, give each its own
-  `chat_group` — otherwise they become one N-turn conversation and the results are meaningless.
-- **Set an evaluator agent** (`pt eval settings <task_id> --default-evaluator-agent-id`) before
-  running anything with `agent` items, or the run fails. Prefer a purpose-built evaluator over
-  borrowing an unrelated agent — a reviewer or persona agent brings its own instructions to the
-  judgement.
+- **`chat_group` groups *contiguous* items into one conversation, and defaults to `1`.**
+  Items are executed in id order, and the worker opens a new chat whenever the group value
+  changes — so groups `1,2,1` produce **three** chats, not two, and the second group-1 item
+  loses the first one's context. For N independent single-turn tests give each item its own
+  group; for a genuine multi-turn case keep its items adjacent. Because the default is `1`,
+  a plan built without passing `--chat-group` collapses into a single N-turn conversation.
+- **Always set an evaluator agent before any run:**
+  `pt eval settings <task_id> --evaluator-agent-id <id>` (optionally `--pass-threshold`, a
+  **float 0–1**). The API rejects a run with 400 *"doesn't have a default evaluator agent ID"*
+  **regardless of item types** — an `exact`- or `similar`-only plan fails the same way, and a
+  per-item evaluator does not satisfy it. Prefer a purpose-built evaluator over borrowing an
+  unrelated agent: a reviewer or persona agent brings its own instructions into the judgement.
 - **`good_example_*` / `bad_example_*` calibrate `similar`.** Without them the score is the raw
   ratio with nothing to anchor it.
-- **Evaluation runs create one chat per `chat_group`** — a 6-item plan run twice leaves ~12
-  chats. Budget for the clutter, or clean up afterwards.
-- **Simulations** (`pt eval simulate`) drive a multi-turn conversation with a simulated user
-  and grade the transcript. They are the right tool for testing behaviour *under pressure*
-  across turns — scope discipline, refusals, a user who pushes back — which single-turn items
-  cannot reach.
+- **Evaluation runs create one chat per contiguous `chat_group`** — a 6-item plan run twice
+  leaves ~12 chats. Budget for the clutter, or clean up afterwards.
+- **Simulations** (`pt eval simulate`) drive a multi-turn conversation with a simulated user.
+  They are the right tool for behaviour *under pressure* across turns — scope discipline,
+  refusals, a user who pushes back — which single-turn items cannot reach. **Grading is opt-in:**
+  pass `--evaluation-prompt` (and an evaluator), or the run finishes with `response: null` and
+  no score at all.
 
 ### Live App lifecycle
 
@@ -377,6 +383,12 @@ Authorization: Token <PT_API_KEY>
 That request mints the CSRF and scoped tokens, sets the cookies and returns the page with
 `window.pt` live from first paint. `https://<host>/live/<chat_id>` is a *different* thing — the
 frontend runner, behind an interactive sign-in an API key cannot open.
+
+**Scope the credential to the PrimeThink host.** Use `page.route` to add the header only for
+requests to `<host>`; a context-wide `set_extra_http_headers` attaches the key to *every*
+request, and the served page loads `https://cdn.socket.io/...` — which would send a
+long-lived API key to a CDN. The bundled `run_plan.py` cannot set headers at all yet, so drive
+this from a short Playwright script (see `ui-testing/README.md`).
 
 **Always finish a persistence check with a reload.** Adding a row and asserting it is on screen
 proves nothing: an in-memory `useState` implementation passes that too. Add → reload →
