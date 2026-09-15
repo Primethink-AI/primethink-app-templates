@@ -243,8 +243,9 @@ session file.
 Two traps, both easy to hit:
 
 - **It takes the chat UUID, not the integer chat id.** Agents see `chat_id: 50301`
-  everywhere, but the live route wants `25189fe0-aacf-4205-80f3-bb0d98d04be5`. Read it
-  from the chat's `uuid` field (`pt chat get <id>`).
+  everywhere, but the live route wants `25189fe0-aacf-4205-80f3-bb0d98d04be5`. There is no
+  `pt chat get`; take the `uuid` field from `pt chat list` (it dumps raw JSON), or from the
+  response `pt chat create` prints when you make the chat.
 - **`/live/<id>` and `/api/v1/live/<uuid>` are different things.** The bare
   `https://<host>/live/<chat_id>` is the *frontend* app runner, behind an interactive
   sign-in wall; an API key will not open it. Always use the `/api/v1/` form for

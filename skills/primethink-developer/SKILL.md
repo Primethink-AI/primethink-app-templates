@@ -331,12 +331,16 @@ looks broken:
 | `similar` | **short, near-canonical strings only** | **prose — see the warning below** |
 | `agent` | conversational answers, refusals, tone, multi-criteria judgement | high-volume cheap checks (it costs a model call per item) |
 
-> ⚠️ **`similar` scores prose far too low, and is actively misleading.** It is a
-> character-level `difflib` ratio, so a correct answer worded differently scores near zero: a
-> near-verbatim paraphrase measured **13/100**, while the identical question and expected
-> answer scored **98/100** under `agent`. Anything whose expected answer is ~200 characters or
-> longer is hit hardest. **Default conversational tasks to `agent`.** Use `similar` only for
-> short canonical strings, and sanity-check one item before building a whole plan on it.
+> ⚠️ **`similar` is a lexical ratio — it rewards shared wording, not shared meaning.** A
+> correct answer that restructures the sentence is marked down, so it suits short,
+> near-canonical strings and not free-form prose. **Default conversational tasks to `agent`**,
+> and sanity-check one item before building a whole plan on `similar`.
+>
+> *Version note:* on deployments before the fix in primethink-api#649, `similar` was far worse
+> than merely lexical — a `difflib` heuristic collapsed the score for **any** expected answer
+> of roughly 200 characters or more, so a faithful paraphrase measured **13/100** where `agent`
+> scored **98/100**. If you see implausibly low `similar` scores on long answers, check whether
+> that fix is deployed before rewriting the task.
 
 Other things worth knowing before you build a plan:
 
