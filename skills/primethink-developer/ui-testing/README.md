@@ -219,22 +219,83 @@ are in `../references/developer-guide/responsive-live-apps.md`.
 
 ## Authentication
 
-The runner starts a fresh browser, so it must establish a session. By default it
-seeds the **pt API token** into the app's `localStorage` before the app's scripts
-run (token resolved from `PRIMETHINK_TOKEN`, else the active profile in
-`~/.primethink/config.json` — same as the CLI).
+### Test the REAL runtime, not a local preview
 
-> ⚠️ **Verify the injection key against the web app.** The default seeds the token
-> under `localStorage["token"]` / `["authToken"]`. If the real web app uses a
-> different key (or a cookie), set it in the plan `auth:` header, or bypass token
-> seeding with a saved session:
->
-> ```bash
-> # Capture a session once (headed), then reuse it headless:
-> #   from playwright.sync_api import sync_playwright
-> #   ... log in manually ... context.storage_state(path="ui-auth.json")
-> python run_plan.py tests/test_plan.yaml --storage-state ui-auth.json
-> ```
+**A local `vite preview` inside the sandbox has no `window.pt`.** Nothing that touches
+ChatDB — persistence, `pt.add`/`pt.list`, real-time sync — can be verified there, and the
+app will appear broken in ways that tempt you into writing defensive guards against a
+runtime that simply is not present. If your only check is a local preview, you have not
+tested the thing the user opens.
+
+Point the browser at the **authenticated live-app endpoint** instead:
+
+```
+GET https://<host>/api/v1/live/<CHAT_UUID>
+Authorization: Token <PT_API_KEY>
+```
+
+One request does all the session setup: the server authenticates the API key, **mints a
+CSRF token and a chat-scoped token, injects them into the returned HTML and sets them as
+cookies**, and wires `<base href>` to the app's file route. The page comes back with
+`window.pt` live from first paint — no sign-in, no `localStorage` guessing, no captured
+session file.
+
+Two traps, both easy to hit:
+
+- **It takes the chat UUID, not the integer chat id.** Agents see `chat_id: 50301`
+  everywhere, but the live route wants `25189fe0-aacf-4205-80f3-bb0d98d04be5`. Read it
+  from the chat's `uuid` field (`pt chat get <id>`).
+- **`/live/<id>` and `/api/v1/live/<uuid>` are different things.** The bare
+  `https://<host>/live/<chat_id>` is the *frontend* app runner, behind an interactive
+  sign-in wall; an API key will not open it. Always use the `/api/v1/` form for
+  automated testing.
+
+In Playwright, set the header before the first navigation:
+
+```python
+context.set_extra_http_headers({"Authorization": f"Token {api_key}"})
+page.goto(f"{host}/api/v1/live/{chat_uuid}")
+```
+
+Assert the runtime exists before anything else — a page that loaded without `pt` fails
+every ChatDB assertion for the wrong reason, which is a slow and confusing way to debug:
+
+```python
+assert page.evaluate("typeof window.pt !== 'undefined'"), "pt runtime missing — check auth/URL"
+```
+
+### Persistence must be tested with a reload
+
+The point of ChatDB is that state survives. A test that adds a row and asserts it is on
+screen proves nothing — an in-memory `useState` implementation passes it too. Always end a
+persistence scenario with a reload and re-assert:
+
+```yaml
+- id: persist.add
+  action: click
+  target: { role: button, name: "Add card" }
+- id: persist.reload
+  action: reload
+- id: persist.still-there
+  action: assert_visible
+  target: { text: "My new card" }
+```
+
+### Fallback: a saved session
+
+For the frontend app runner, or any flow the API key cannot reach, capture a session once
+and reuse it:
+
+```bash
+# Capture a session once (headed), then reuse it headless:
+#   from playwright.sync_api import sync_playwright
+#   ... log in manually ... context.storage_state(path="ui-auth.json")
+python run_plan.py tests/test_plan.yaml --storage-state ui-auth.json
+```
+
+Legacy `localStorage` token seeding is still supported via the plan `auth:` header, but
+prefer the API-key route above: it is verified against the server's own auth path rather
+than guessing at a storage key.
 
 ## Runner options
 

@@ -304,6 +304,87 @@ there is no task.
 - These commands publish a **local project directory**. Inside a Deep1 sandbox you deploy by
   copying the flat `dist/` contents into `/documents/app/` instead (above).
 
+## The Full Lifecycles — do not stop at "it builds"
+
+Publishing is the middle of the job, not the end. Both a Task and a Live App have a
+verification stage after deployment, and skipping it is the single most common way work is
+reported as finished when it does not work.
+
+### Task lifecycle
+
+```
+create/publish  →  build an evaluation plan  →  run  →  read results  →  fix  →  re-run
+   pt task          pt eval add                pt eval run   pt eval results
+```
+
+The evaluation surface is `pt eval` (13 subcommands) — note it is **top level, not under
+`pt task`**, so `pt task --help` gives no hint it exists. The same operations exist as agent
+tools in the `primethink_admin` capability (`primethink_add_task_evaluation`,
+`primethink_run_task_evaluation`, `primethink_get_task_evaluation_results`, …).
+
+**Choosing `evaluation_type` is the decision that matters.** Get it wrong and a healthy task
+looks broken:
+
+| type | use it for | avoid it for |
+|---|---|---|
+| `exact` | enum values, ids, one-word answers | anything a model phrases freely |
+| `similar` | **short, near-canonical strings only** | **prose — see the warning below** |
+| `agent` | conversational answers, refusals, tone, multi-criteria judgement | high-volume cheap checks (it costs a model call per item) |
+
+> ⚠️ **`similar` scores prose far too low, and is actively misleading.** It is a
+> character-level `difflib` ratio, so a correct answer worded differently scores near zero: a
+> near-verbatim paraphrase measured **13/100**, while the identical question and expected
+> answer scored **98/100** under `agent`. Anything whose expected answer is ~200 characters or
+> longer is hit hardest. **Default conversational tasks to `agent`.** Use `similar` only for
+> short canonical strings, and sanity-check one item before building a whole plan on it.
+
+Other things worth knowing before you build a plan:
+
+- **`chat_group` groups multi-turn items.** Items sharing a `chat_group` run as one
+  conversation in one chat. For N independent single-turn tests, give each its own
+  `chat_group` — otherwise they become one N-turn conversation and the results are meaningless.
+- **Set an evaluator agent** (`pt eval settings <task_id> --default-evaluator-agent-id`) before
+  running anything with `agent` items, or the run fails. Prefer a purpose-built evaluator over
+  borrowing an unrelated agent — a reviewer or persona agent brings its own instructions to the
+  judgement.
+- **`good_example_*` / `bad_example_*` calibrate `similar`.** Without them the score is the raw
+  ratio with nothing to anchor it.
+- **Evaluation runs create one chat per `chat_group`** — a 6-item plan run twice leaves ~12
+  chats. Budget for the clutter, or clean up afterwards.
+- **Simulations** (`pt eval simulate`) drive a multi-turn conversation with a simulated user
+  and grade the transcript. They are the right tool for testing behaviour *under pressure*
+  across turns — scope discipline, refusals, a user who pushes back — which single-turn items
+  cannot reach.
+
+### Live App lifecycle
+
+```
+build  →  publish  →  test the REAL runtime  →  fix  →  re-publish
+ npm run build   pt live-app publish/test    ui-testing/
+```
+
+**A local `vite preview` is not a test.** It has no `window.pt`, so persistence, `pt.add` /
+`pt.list` and real-time sync cannot be exercised there at all — and the missing runtime tempts
+you into writing defensive guards against an absence that only exists in your test harness.
+
+Test against the authenticated live endpoint instead:
+
+```
+GET https://<host>/api/v1/live/<CHAT_UUID>      # UUID, not the integer chat id
+Authorization: Token <PT_API_KEY>
+```
+
+That request mints the CSRF and scoped tokens, sets the cookies and returns the page with
+`window.pt` live from first paint. `https://<host>/live/<chat_id>` is a *different* thing — the
+frontend runner, behind an interactive sign-in an API key cannot open.
+
+**Always finish a persistence check with a reload.** Adding a row and asserting it is on screen
+proves nothing: an in-memory `useState` implementation passes that too. Add → reload →
+re-assert is the only version of the test that means anything, and "everything is still there
+when I reload" is usually the requirement the user actually cares about.
+
+Full mechanics, plan schema and the runner: `ui-testing/README.md`.
+
 ## Dynamic Page Types: HTML and React
 
 A dynamic Live App is deployed as source files in the chat's `@app` folder; `page_type` tells the platform how to render the entry file.
