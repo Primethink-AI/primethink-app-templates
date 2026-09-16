@@ -80,9 +80,10 @@ cost hours.
 - Some endpoints return **HTTP 204 / empty body on success** (`assign_tags`,
   `set_production_version`). Treat an empty 2xx as success, not a parse failure.
 - `list_agents` full records are large — use the summary form.
-- If `delete_task`, by-name `search_documents`/`search_messages` or `execute_task_action`
-  return a 500, check the API version you are pointed at — these have been fixed, so a 500
-  means an older deployment.
+- `delete_task`, by-name `search_documents`/`search_messages` and `execute_task_action` have
+  each 500'd in the past and been fixed. A 500 from one of them is worth checking against the
+  API version you are pointed at — but a 500 is a generic server error, so rule out the usual
+  causes (bad ids, a genuine server fault) before concluding the deployment is old.
 
 ## Not available
 

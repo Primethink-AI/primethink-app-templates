@@ -71,7 +71,9 @@ store docs but return nothing from semantic search.
 ## Notifications
 User-level alerts tied to a `chat_id` + `group_id` (not directly a workspace — map
 chat → workspace to filter by workspace). Channels: push, websocket badges, 5-min
-batched email digest. **Reading is REST-only** (no CLI); **sending** is only via a
+batched email digest. **Read and mark** them with `pt notification` (`list`,
+`unread-count`, `mark-read`, `mark-unread`, `mark-all-read`, `delete`), or call the REST
+endpoints directly if you need a field the CLI does not surface. **Sending** is only via a
 Live App's `pt.sendNotification`.
 
 ## Scheduled jobs / prompts
