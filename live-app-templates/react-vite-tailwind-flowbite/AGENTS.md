@@ -128,13 +128,95 @@ Other API shapes worth not guessing:
   `{ entities, count, pagination }` shape needs `returnMetadata: true`.
 - `pt.onEntityChanged(callback, { entityName })` — **callback first**.
 
-## 6. Run the linter after every edit
+## 6. Write the acceptance tests before the UI
+
+`tests/acceptance.test.mjs` exists in every new project. Transcribe your spec into it
+FIRST, then build until it passes.
+
+This is the one practice that separated the good build reports from the bad ones. The
+agents that did it caught an error in the *spec itself*. The ones that did not shipped
+defects that passed every other gate — a table cell that silently dropped `colSpan`, a
+nav drawer that never returned focus, demo data whose cross-references all resolved and
+were all semantically wrong. Lint and the build check that code is WELL-FORMED. Nothing
+else checks that it is RIGHT.
+
+**The rule that makes it cheap:**
+
+> Domain logic goes in pure modules under `src/lib/`, with no `pt` in them.
+
+Rules, scoring, validation, filtering, date maths, state transitions. Factored out, all
+of it is testable in milliseconds with no stub, no mock, no browser and no running app.
+Components become a thin layer that reads from `pt` and calls those functions.
+
+That split is not theoretical: of the four reference apps in `primethink-live-apps`, the
+two that wrote acceptance tests needed **no `pt` stub at all**, and the two that did not
+each hand-wrote one — and the two stubs disagree with each other about the API. A
+hand-written stub encodes your *belief* about the platform, so it cannot catch a wrong
+belief. Prefer making the stub unnecessary.
+
+Cite spec clauses next to assertions (`// §4.2`). When one fails later, that is how you
+know whether the code is wrong or the spec moved.
+
+Two clause types are worth writing even when they feel like overkill — both have a
+worked example in the skeleton:
+
+- **Contract.** Assert the entity names your code uses are the ones your `GOAL.md` /
+  `SPECS.md` documents. These drift silently and nothing else compares them.
+- **Seed integrity.** If you ship demo rows, assert the DOMAIN relationships, not just
+  that referenced ids resolve. Referential integrity is not semantic correctness.
+
+## 7. Browser tests and screenshots
+
+`npm run test:ui` runs `tests/ui.spec.mjs` against the BUILT app via Playwright.
+
+```
+npx playwright install chromium   # once per machine — browsers are not in node_modules
+npm run test:ui
+npm run test:ui -- --update-snapshots
+```
+
+Playwright is a devDependency of this template. Do not resolve it by path into another
+project's `node_modules`; that has happened, and it breaks for everyone else.
+
+Reach for a screenshot assertion (`toHaveScreenshot`) for anything whose failure is
+visual. Two of the reported bugs were visible **only** in a screenshot — a paint effect
+applied to an inline element that had no box, and a white band around a dark-mode app —
+and neither raised an error anywhere. Commit the baselines, and **review them before you
+do**: a baseline recorded from a broken render locks the bug in.
+
+Keep them narrow. One screenshot per screen per theme is reviewable; one per component
+is not.
+
+`vite preview` is a static file server here, nothing more. There is no `window.pt`, so
+persistence, `pt.add` / `pt.list` and real-time sync cannot be exercised in it at all —
+and the missing runtime tempts you into writing defensive guards against an absence that
+only exists in your harness. Use it for layout, the theme bridge, focus and keyboard
+behaviour, and screenshots.
+
+## 8. Run the linter after every edit
 
 Vite/esbuild does **not** enforce `no-undef`; it bundles an undeclared reference
 silently and the app throws at runtime. `npm run lint` after each edit — not just
 before you start. `npm run build` runs it first and refuses to build on errors.
 
-## 7. `dist/` must stay flat and relative
+## 9. Use the primitives the template ships
+
+`src/components/Table.jsx` — `Table`, `THead`, `TBody`, `Tr`, `Th`, `Td`. Every one
+spreads `...rest` onto its element. A hand-rolled `<td className={…}>{children}</td>`
+wrapper looks complete and silently drops `colSpan`, `rowSpan`, `scope`, `headers` and
+every `aria-*`, which is how an empty-state row ends up in one column instead of
+spanning the table: it renders, it looks nearly right, and no gate objects.
+
+`src/lib/pt-list.js` — `rowsOf()`, `countOf()`, `listRows()`. `pt.list()` returns a bare
+array unless you pass `returnMetadata: true`, so `.entities` on the default shape is
+`undefined`, which reads as "no rows" rather than as an error. Use `rowsOf()` instead of
+writing the guard again.
+
+These are deliberately the only platform helpers here. `libraries/` in the skill is
+scoped to dynamic, no-build apps; for a compiled app, domain logic belongs in pure
+modules of your own beside `pt-list.js` — see §6.
+
+## 10. `dist/` must stay flat and relative
 
 No nested directories, no root-absolute (`/asset.js`) URLs — PrimeThink deploys
 top-level files only and serves them under a chat-specific base path. Keep
@@ -146,8 +228,10 @@ top-level files only and serves them under a chat-specific base path. Keep
 ```
 npm run lint       # ESLint over the whole project: no-undef, react-hooks,
                    # and the PrimeThink rules in eslint-rules/primethink.js
+npm test           # acceptance tests + the PrimeThink rule fixtures (no browser)
+npm run test:ui    # Playwright, against the built app
 npm run build      # lint -> vite build -> verify-dist
-npm run test:rules # fixtures for the PrimeThink rules themselves
+npm run test:rules # just the fixtures for the PrimeThink rules
 ```
 
 `npm run lint` covers `tests/` and `scripts/` as well as `src/` — an undeclared

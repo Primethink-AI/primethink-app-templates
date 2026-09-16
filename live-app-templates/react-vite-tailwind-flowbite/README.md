@@ -12,6 +12,7 @@ An intentionally blank PrimeThink Live App canvas with a production build pipeli
 | Tailwind CSS / `@tailwindcss/vite` | 4.3.3 |
 | Flowbite | 4.0.2 |
 | Flowbite React | 0.12.17 |
+| `@playwright/test` (dev) | ^1.63.0 |
 
 Vite 8 requires Node `20.19+` or `22.12+`. Versions are pinned in `package.json`, and `package-lock.json` records the transitive dependency graph.
 
@@ -19,12 +20,32 @@ Vite 8 requires Node `20.19+` or `22.12+`. Versions are pinned in `package.json`
 
 ```bash
 npm install
+npx playwright install chromium   # once per machine, for npm run test:ui
 npm run dev
-npm run build
+npm test                          # acceptance tests + PrimeThink rule fixtures
+npm run test:ui                   # Playwright, against the built app
+npm run build                     # lint -> vite build -> verify-dist
 npm run preview
 ```
 
-Start building in `src/App.jsx`. Tailwind and Flowbite React are already wired through `src/index.css` and `vite.config.js`, but the blank app imports no UI components until you choose to use them.
+**Start with `tests/acceptance.test.mjs`, not `src/App.jsx`.** Transcribe your spec into
+it before building the UI, and keep domain logic in pure modules under `src/lib/` so it
+can be tested without a browser or a `pt` stub. `AGENTS.md` §6 explains why this is the
+practice that most changes the outcome.
+
+Then build in `src/App.jsx`. Tailwind and Flowbite React are already wired through `src/index.css` and `vite.config.js`, but the blank app imports no UI components until you choose to use them.
+
+## What the template ships beyond wiring
+
+| Path | Purpose |
+|---|---|
+| `tests/acceptance.test.mjs` | Spec-driven acceptance skeleton. Write these first. |
+| `tests/ui.spec.mjs` | Playwright: theme bridge, render health, screenshot baselines. |
+| `src/lib/pt-list.js` | `rowsOf()` / `countOf()` / `listRows()` — `pt.list()` returns a bare array unless you pass `returnMetadata: true`. |
+| `src/components/Table.jsx` | Table primitives that forward `...rest`, so `colSpan` and `aria-*` survive. |
+| `src/components/Modal.jsx` | Portal modal. flowbite-react's Modal crashes under React 19. |
+| `eslint-rules/primethink.js` | Seven platform rules, run as errors by `npm run lint`. |
+| `scripts/verify-dist.mjs` | Artifact checks: flat relative output, no CDN fonts, no undefined `@theme` utilities. |
 
 ## PrimeThink deployment
 
