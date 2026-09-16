@@ -4,3 +4,18 @@
 
 /* PrimeThink controls dark mode with a class on <html>. */
 @custom-variant dark (&:where(.dark, .dark *));
+
+/* `html` needs its own background, not just `body`.
+   The app runs in an iframe and the viewport can be taller than the app shell —
+   over-scroll, a short page, a rubber-band bounce on macOS. Anything painted only
+   on `body` leaves the html canvas at its default WHITE, which shows as a white
+   band around a dark-mode app. It is invisible in a screenshot of the app itself
+   and obvious in a screenshot of the frame. */
+@layer base {
+  html {
+    background-color: var(--color-white);
+  }
+  html:where(.dark) {
+    background-color: var(--color-gray-900);
+  }
+}

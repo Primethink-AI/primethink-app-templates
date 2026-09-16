@@ -64,9 +64,25 @@ export default [
   },
   {
     // Build scripts, tests and config run in Node, not the browser.
-    files: ['scripts/**/*.mjs', 'tests/**/*.mjs', 'eslint-rules/**/*.{js,mjs}', 'vite.config.js', 'eslint.config.js'],
+    files: [
+      'scripts/**/*.mjs',
+      'tests/**/*.mjs',
+      'eslint-rules/**/*.{js,mjs}',
+      'vite.config.js',
+      'eslint.config.js',
+      'playwright.config.mjs'
+    ],
     languageOptions: {
       globals: { ...globals.node }
+    }
+  },
+  {
+    // Playwright specs run in Node, but the bodies passed to page.evaluate() are
+    // serialised and run in the BROWSER, so they legitimately reference document,
+    // window and friends. Both sets apply.
+    files: ['tests/**/*.spec.mjs'],
+    languageOptions: {
+      globals: { ...globals.node, ...globals.browser }
     }
   }
 ];

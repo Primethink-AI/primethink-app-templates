@@ -4,3 +4,7 @@ dist/
 *.log
 .DS_Store
 .flowbite-react/init.jsx
+# Playwright run artifacts. Reference screenshots (tests/**/*-snapshots/) ARE committed:
+# a baseline that only exists locally cannot fail anyone else's build.
+test-results/
+playwright-report/
