@@ -738,7 +738,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 1. **No localStorage** — all state goes through `pt.add/edit/list` (chat database). Cross-device, persistent, AI-accessible.
 2. **Always spread on edit** — `pt.edit(id, { ...entity.data, newField: val })` or use merge mode `pt.edit(id, data, true)`.
 3. **Cache members** — call `pt.getChatMembers()` once at init, not in loops.
-4. **Dark mode** — every color must resolve in BOTH themes, and the theme must follow the host (class-based dark + `?theme=`/`pt:theme` bootstrap), never the OS `prefers-color-scheme`. Two ways to satisfy this: a `dark:` partner on every color class, OR semantic tokens declared in an `@theme inline` block whose variables are re-bound under `.dark` — with `@theme inline` the utilities need no `dark:` variants at all. Pick one per project and hold to it.
+4. **Dark mode** — every color must resolve in BOTH themes, and the theme must follow the host (class-based dark + `?theme=`/`pt:theme` bootstrap). The OS `prefers-color-scheme` must never override a host signal, and must never be what the `dark:` variant keys off; it is only the last resort when no host signal exists at all — see the three-source priority above. Two ways to satisfy the color requirement: a `dark:` partner on every color class, OR semantic tokens declared in an `@theme inline` block whose variables are re-bound under `.dark` — with `@theme inline` the utilities need no `dark:` variants at all. Pick one per project and hold to it.
 5. **XSS prevention** — always `escapeHtml()` user content before innerHTML.
 6. **Server-side filtering** — use `filters:` in `pt.list()`, not client-side `.filter()`.
 7. **Debounce saves** — 1s debounce for frequent state updates.

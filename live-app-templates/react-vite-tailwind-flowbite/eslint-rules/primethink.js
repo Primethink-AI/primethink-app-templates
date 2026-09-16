@@ -17,6 +17,15 @@
  * start getting waved through too. That principle sets the bias throughout this file:
  * where the AST cannot decide, the rule stays silent.
  *
+ * Two consequences of that bias are worth stating, because they are easy to undo:
+ *
+ *   - Identity comes from ESLint's scope analysis, never from identifier TEXT. A
+ *     parameter named `pt`, a shadowed `window`, or a second `res` in a nested function
+ *     are different bindings, and these rules are registered as `error` under
+ *     `--max-warnings 0`, so a name collision would fail somebody's build outright.
+ *   - A value is reported only when its shape is PROVEN. A flag behind a variable, a
+ *     spread, or a computed expression is unknowable at lint time and stays silent.
+ *
  * The artifact-level checks (a CDN font, a utility class that emitted no CSS) are not
  * here — they belong in `scripts/verify-dist.mjs`, which inspects what actually
  * shipped rather than guessing from source.
@@ -28,6 +37,12 @@
 /** Objects that carry the platform globals. `pt` is injected onto `window`. */
 const GLOBAL_OBJECTS = new Set(['window', 'globalThis', 'self']);
 
+const FUNCTION_TYPES = new Set([
+  'FunctionDeclaration',
+  'FunctionExpression',
+  'ArrowFunctionExpression'
+]);
+
 /**
  * Property name of a MemberExpression, for both `a.b` and `a['b']`.
  * Returns undefined for a genuinely dynamic key, which keeps every caller quiet.
@@ -38,33 +53,6 @@ const memberName = (node) => {
   return node.property.type === 'Literal' && typeof node.property.value === 'string'
     ? node.property.value
     : undefined;
-};
-
-/**
- * Does this expression evaluate to the injected platform global?
- *
- * Both spellings are in active use and must be treated identically: the bare `pt`
- * binding, and `window.pt`, which is what the template's own `src/lib/pt-ai.js`
- * uses throughout so the module bundles outside the host without throwing.
- * A rule that only saw the bare binding would be blind to the template's own idiom.
- */
-const isPtReceiver = (node) =>
-  (node?.type === 'Identifier' && node.name === 'pt') ||
-  (node?.type === 'MemberExpression' &&
-    node.object.type === 'Identifier' &&
-    GLOBAL_OBJECTS.has(node.object.name) &&
-    memberName(node) === 'pt');
-
-/** Method name of a `pt.<name>()` / `window.pt.<name>()` call, else undefined. */
-const ptMethod = (node) => {
-  if (node?.type !== 'CallExpression' || node.callee.type !== 'MemberExpression') return undefined;
-  if (!isPtReceiver(node.callee.object)) return undefined;
-  return memberName(node.callee);
-};
-
-const isPtCall = (node, name) => {
-  const method = ptMethod(node);
-  return method !== undefined && (name === undefined || method === name);
 };
 
 /** Unwrap `await x` so the tracking below sees the call itself. */
@@ -83,6 +71,67 @@ const hasSpread = (objectExpression) =>
   objectExpression?.type === 'ObjectExpression' &&
   objectExpression.properties.some((p) => p.type === 'SpreadElement');
 
+/**
+ * Scope-aware helpers, built once per rule execution.
+ *
+ * Everything here keys off ESLint's resolved bindings rather than identifier text.
+ * `pt` and `window` are ordinary names: a parameter called `pt`, or a local `window`
+ * in a test helper, must not drag unrelated code into these rules.
+ */
+const analysis = (context) => {
+  const sourceCode = context.sourceCode;
+
+  /** The binding an identifier reference resolves to, or null when it is a global. */
+  const variableOf = (identifier) => {
+    if (identifier?.type !== 'Identifier') return null;
+    for (let scope = sourceCode.getScope(identifier); scope; scope = scope.upper) {
+      const ref = scope.references.find((r) => r.identifier === identifier);
+      if (ref) return ref.resolved;
+    }
+    return null;
+  };
+
+  /**
+   * Is this identifier the ambient global of that name, rather than a local of the
+   * same spelling? An unresolved reference is a global too (`no-undef` owns that case);
+   * a binding declared anywhere in the file is not.
+   */
+  const isGlobal = (identifier, name) => {
+    if (identifier?.type !== 'Identifier' || identifier.name !== name) return false;
+    const variable = variableOf(identifier);
+    return variable === null || (variable.defs.length === 0 && variable.scope.type === 'global');
+  };
+
+  /** Does this expression evaluate to the injected platform global? */
+  const isPtReceiver = (node) =>
+    isGlobal(node, 'pt') ||
+    (node?.type === 'MemberExpression' &&
+      memberName(node) === 'pt' &&
+      node.object.type === 'Identifier' &&
+      GLOBAL_OBJECTS.has(node.object.name) &&
+      isGlobal(node.object, node.object.name));
+
+  /** Method name of a `pt.<name>()` / `window.pt.<name>()` call, else undefined. */
+  const ptMethod = (node) => {
+    if (node?.type !== 'CallExpression' || node.callee.type !== 'MemberExpression') return undefined;
+    if (!isPtReceiver(node.callee.object)) return undefined;
+    return memberName(node.callee);
+  };
+
+  const isPtCall = (node, name) => {
+    const method = ptMethod(node);
+    return method !== undefined && (name === undefined || method === name);
+  };
+
+  /** The `pt.<name>()` call a member expression reads DIRECTLY off, as in `(await pt.list()).entities`. */
+  const directPtCall = (memberNode, name) => {
+    const object = unwrapAwait(memberNode.object);
+    return isPtCall(object, name) ? object : undefined;
+  };
+
+  return { sourceCode, variableOf, isPtCall, ptMethod, directPtCall };
+};
+
 const rules = {
   /**
    * `pt.waitForMessageReceived()` resolves an object whose AI text is on `.message`.
@@ -95,6 +144,7 @@ const rules = {
       schema: []
     },
     create(context) {
+      const { sourceCode, variableOf, isPtCall, directPtCall } = analysis(context);
       const awaited = new Set();
       const pending = [];
 
@@ -104,11 +154,13 @@ const rules = {
           message: `The AI reply is on \`.message\`, not \`.${prop}\` — which is undefined and reads as an empty response.`
         });
 
-      /** `x = await pt.waitForMessageReceived()` in either declaration or assignment form. */
-      const track = (target, value) => {
+      const track = (target, value, declarator) => {
         if (!isPtCall(unwrapAwait(value), 'waitForMessageReceived')) return;
         if (target.type === 'Identifier') {
-          awaited.add(target.name);
+          const variable = declarator
+            ? sourceCode.getDeclaredVariables(declarator)[0]
+            : variableOf(target);
+          if (variable) awaited.add(variable);
         } else if (target.type === 'ObjectPattern') {
           // const { text } = await pt.waitForMessageReceived() — decidable on the spot.
           for (const p of target.properties) {
@@ -120,21 +172,26 @@ const rules = {
 
       return {
         VariableDeclarator(node) {
-          track(node.id, node.init);
+          track(node.id, node.init, node);
         },
         AssignmentExpression(node) {
-          if (node.operator === '=') track(node.left, node.right);
+          if (node.operator === '=') track(node.left, node.right, null);
         },
         MemberExpression(node) {
           const prop = memberName(node);
           if (prop !== 'text' && prop !== 'content') return;
+          // `(await pt.waitForMessageReceived()).text` — no variable involved at all.
+          if (directPtCall(node, 'waitForMessageReceived')) {
+            report(node, prop);
+            return;
+          }
           if (node.object.type !== 'Identifier') return;
           // Deferred: the assignment that makes this a response may sit further down.
-          pending.push({ node, name: node.object.name, prop });
+          pending.push({ node, variable: variableOf(node.object), prop });
         },
         'Program:exit'() {
           for (const entry of pending) {
-            if (awaited.has(entry.name)) report(entry.node, entry.prop);
+            if (entry.variable && awaited.has(entry.variable)) report(entry.node, entry.prop);
           }
         }
       };
@@ -155,16 +212,16 @@ const rules = {
       schema: []
     },
     create(context) {
+      const { isPtCall } = analysis(context);
       const NEVER_A_FUNCTION = new Set(['TemplateLiteral', 'ObjectExpression', 'ArrayExpression']);
       return {
         CallExpression(node) {
           if (!isPtCall(node, 'onEntityChanged')) return;
           const first = node.arguments[0];
           if (!first) return;
-          const impossible =
-            NEVER_A_FUNCTION.has(first.type) ||
-            (first.type === 'Literal' && typeof first.value !== 'object');
-          if (!impossible) return;
+          // Every Literal is impossible here, including `null` and a regex — ESTree gives
+          // both `typeof value === 'object'`, so a value test would let them through.
+          if (first.type !== 'Literal' && !NEVER_A_FUNCTION.has(first.type)) return;
           context.report({
             node: first,
             message:
@@ -180,9 +237,9 @@ const rules = {
    * `pt.list()` returns a BARE ARRAY unless `returnMetadata: true`, in which case it
    * returns `{ entities, count, pagination }`.
    *
-   * This fires only on a direct `.entities` read of a result we can PROVE asked for no
+   * This fires only on a `.entities` read of a result we can PROVE asked for no
    * metadata. Options passed through a variable or a spread are undecidable, so they
-   * stay silent, and a name that is assigned more than one shape is dropped entirely.
+   * stay silent, and a binding assigned more than one shape is dropped entirely.
    * The documented dual-shape guard — `Array.isArray(x) ? x : x?.entities` — is allowed,
    * because it is the safe form, not a misuse.
    */
@@ -193,11 +250,17 @@ const rules = {
       schema: []
     },
     create(context) {
-      /** Names proven to hold a metadata-free pt.list() result. */
+      const { sourceCode, variableOf, isPtCall, directPtCall } = analysis(context);
+      /** Bindings proven to hold a metadata-free pt.list() result. */
       const bare = new Set();
-      /** Names we cannot pin to one shape — never reported. */
+      /** Bindings we cannot pin to one shape — never reported. */
       const ambiguous = new Set();
       const pending = [];
+
+      const MESSAGE =
+        'pt.list() returns a bare array here, so `.entities` is undefined. Use the result directly, ' +
+        'pass { returnMetadata: true } if you need count/pagination, or guard with ' +
+        'Array.isArray(x) ? x : x?.entities ?? [].';
 
       /**
        * Does this `pt.list(options)` call return a bare array?
@@ -219,53 +282,97 @@ const rules = {
         return prop.value.value !== true;
       };
 
-      /** Is this `.entities` read inside a guard that already handled the array case? */
-      const isGuarded = (node) => {
-        for (let p = node.parent; p; p = p.parent) {
-          if (p.type === 'ConditionalExpression' || p.type === 'LogicalExpression') {
-            if (/Array\.isArray/.test(context.sourceCode.getText(p))) return true;
+      /**
+       * `Array.isArray(<the same binding>)`, allowing for negation.
+       * Returns 'positive', 'negative', or null when it does not test this binding.
+       */
+      const isArrayTestOf = (test, variable) => {
+        let node = test;
+        let negated = false;
+        while (node.type === 'UnaryExpression' && node.operator === '!') {
+          negated = !negated;
+          node = node.argument;
+        }
+        if (node.type !== 'CallExpression') return null;
+        const callee = node.callee;
+        if (
+          callee.type !== 'MemberExpression' ||
+          callee.object.type !== 'Identifier' ||
+          callee.object.name !== 'Array' ||
+          memberName(callee) !== 'isArray'
+        ) {
+          return null;
+        }
+        const arg = node.arguments[0];
+        if (!arg || arg.type !== 'Identifier' || variableOf(arg) !== variable) return null;
+        return negated ? 'negative' : 'positive';
+      };
+
+      /**
+       * Is this `.entities` read on the branch where the array case is already excluded?
+       *
+       * It is not enough for an `Array.isArray` to appear somewhere in an enclosing
+       * conditional: `flag ? result.entities : Array.isArray(other)` tests a different
+       * value on a different branch and guards nothing.
+       */
+      const isGuarded = (node, variable) => {
+        if (!variable) return false;
+        for (let child = node, p = node.parent; p; child = p, p = p.parent) {
+          if (FUNCTION_TYPES.has(p.type)) return false;
+          if (p.type === 'ConditionalExpression') {
+            const polarity = isArrayTestOf(p.test, variable);
+            if (polarity === 'positive' && child === p.alternate) return true;
+            if (polarity === 'negative' && child === p.consequent) return true;
           }
-          if (p.type === 'FunctionDeclaration' || p.type === 'FunctionExpression') break;
+          if (p.type === 'LogicalExpression' && child === p.right) {
+            const polarity = isArrayTestOf(p.left, variable);
+            if (p.operator === '&&' && polarity === 'negative') return true;
+            if (p.operator === '||' && polarity === 'positive') return true;
+          }
         }
         return false;
       };
 
-      const track = (target, value) => {
+      const track = (target, value, declarator) => {
         if (target.type !== 'Identifier') return;
+        const variable = declarator ? sourceCode.getDeclaredVariables(declarator)[0] : variableOf(target);
+        if (!variable) return;
         const init = unwrapAwait(value);
         if (!init || !isPtCall(init, 'list')) {
           // Reassigned to something we know nothing about: the shape is no longer ours.
-          if (bare.has(target.name)) ambiguous.add(target.name);
+          if (bare.has(variable)) ambiguous.add(variable);
           return;
         }
-        if (returnsBareArray(init) === true) bare.add(target.name);
-        else ambiguous.add(target.name);
+        if (returnsBareArray(init) === true) bare.add(variable);
+        else ambiguous.add(variable);
       };
 
       return {
         VariableDeclarator(node) {
-          track(node.id, node.init);
+          track(node.id, node.init, node);
         },
         AssignmentExpression(node) {
-          if (node.operator === '=') track(node.left, node.right);
+          if (node.operator === '=') track(node.left, node.right, null);
         },
         MemberExpression(node) {
           if (memberName(node) !== 'entities') return;
+          // `(await pt.list()).entities` — no variable involved at all.
+          const direct = directPtCall(node, 'list');
+          if (direct) {
+            if (returnsBareArray(direct) === true) context.report({ node, message: MESSAGE });
+            return;
+          }
           if (node.object.type !== 'Identifier') return;
-          if (isGuarded(node)) return;
-          // Deferred: a later reassignment can still make this name ambiguous.
-          pending.push({ node, name: node.object.name });
+          const variable = variableOf(node.object);
+          if (isGuarded(node, variable)) return;
+          // Deferred: a later reassignment can still make this binding ambiguous.
+          pending.push({ node, variable });
         },
         'Program:exit'() {
           for (const entry of pending) {
-            if (!bare.has(entry.name) || ambiguous.has(entry.name)) continue;
-            context.report({
-              node: entry.node,
-              message:
-                'pt.list() returns a bare array here, so `.entities` is undefined. Use the result directly, ' +
-                'pass { returnMetadata: true } if you need count/pagination, or guard with ' +
-                'Array.isArray(x) ? x : x?.entities ?? [].'
-            });
+            if (!entry.variable) continue;
+            if (!bare.has(entry.variable) || ambiguous.has(entry.variable)) continue;
+            context.report({ node: entry.node, message: MESSAGE });
           }
         }
       };
@@ -325,19 +432,32 @@ const rules = {
       ]
     },
     create(context) {
+      const { variableOf } = analysis(context);
       const STORAGES = new Set(['localStorage', 'sessionStorage']);
+      // Only these take a key. `clear()` ignores its arguments and wipes everything,
+      // so `localStorage.clear('pt-theme')` must never read as the theme exception.
+      const KEYED_METHODS = new Set(['getItem', 'setItem', 'removeItem']);
       const allowedKeys = new Set(context.options[0]?.allowedKeys ?? ['pt-theme']);
+
+      const isGlobalNamed = (identifier, name) => {
+        if (identifier?.type !== 'Identifier' || identifier.name !== name) return false;
+        const variable = variableOf(identifier);
+        return variable === null || (variable.defs.length === 0 && variable.scope.type === 'global');
+      };
 
       /**
        * Does this expression evaluate to web storage? Both the bare binding and the
        * `window.`-qualified form, which is what code written to run outside the host uses.
        */
       const storageName = (node) => {
-        if (node?.type === 'Identifier' && STORAGES.has(node.name)) return node.name;
+        if (node?.type === 'Identifier' && STORAGES.has(node.name) && isGlobalNamed(node, node.name)) {
+          return node.name;
+        }
         if (
           node?.type === 'MemberExpression' &&
           node.object.type === 'Identifier' &&
-          GLOBAL_OBJECTS.has(node.object.name)
+          GLOBAL_OBJECTS.has(node.object.name) &&
+          isGlobalNamed(node.object, node.object.name)
         ) {
           const name = memberName(node);
           if (name && STORAGES.has(name)) return name;
@@ -351,7 +471,7 @@ const rules = {
           if (!storage) return;
           // `<storage>.getItem('pt-theme')` and friends — the documented exception.
           const call = node.parent;
-          if (call?.type === 'CallExpression' && call.callee === node) {
+          if (call?.type === 'CallExpression' && call.callee === node && KEYED_METHODS.has(memberName(node))) {
             const key = call.arguments[0];
             if (key?.type === 'Literal' && allowedKeys.has(key.value)) return;
           }
@@ -370,9 +490,10 @@ const rules = {
    * An app-driven AI call must pass `{ hidden: true }`, or the prompt lands in the chat
    * transcript where the user sees it.
    *
-   * Only fires on an inline object literal that explicitly omits or falsifies the flag —
-   * options passed through a variable or a spread are left alone, which is exactly the
-   * case that forced a file-level suppression into the template's own pt-ai.js.
+   * The contract is literally `true`: the SDK sends `finalOptions.hidden || false`
+   * (primethink.js:2144), so `null`, `0` and `''` all ship a VISIBLE message while
+   * reading as an attempt to hide one. Runtime-dependent values are left alone, which
+   * is the case that forced a file-level suppression into the template's own pt-ai.js.
    */
   'add-message-hidden': {
     meta: {
@@ -381,18 +502,23 @@ const rules = {
       schema: []
     },
     create(context) {
+      const { isPtCall } = analysis(context);
       return {
         CallExpression(node) {
           if (!isPtCall(node, 'addMessage')) return;
           const last = node.arguments[node.arguments.length - 1];
-          if (!last || last.type !== 'ObjectExpression') return; // variable/spread: not decidable, stay quiet
+          if (!last || last.type !== 'ObjectExpression') return; // variable/spread: not decidable
           if (hasSpread(last)) return;
           const hidden = propOf(last, 'hidden');
-          if (hidden && !(hidden.value.type === 'Literal' && hidden.value.value === false)) return;
+          if (hidden) {
+            if (hidden.value.type !== 'Literal') return; // runtime-dependent, stay quiet
+            if (hidden.value.value === true) return;
+          }
           context.report({
             node: last,
             message:
-              'An app-driven pt.addMessage() needs { hidden: true }, or the prompt appears in the chat transcript. ' +
+              'An app-driven pt.addMessage() needs { hidden: true } exactly — the SDK sends ' +
+              '`hidden || false`, so null/0/"" all post a VISIBLE message. ' +
               'Omit the options object entirely if the message is meant to be visible.'
           });
         }
@@ -404,6 +530,11 @@ const rules = {
    * React StrictMode double-invokes state updaters, so a `pt` write inside one runs
    * twice and writes a duplicate row. This corrupts data rather than crashing, so
    * nothing surfaces it at runtime.
+   *
+   * The write must be in the updater's OWN body. A function the updater merely declares
+   * — an event handler assigned to something, a callback handed to a timer — is not run
+   * by StrictMode's double invocation, so reporting it would be a false positive. An
+   * immediately-invoked function is run, so the walk continues through those.
    */
   'no-pt-write-in-state-updater': {
     meta: {
@@ -412,10 +543,11 @@ const rules = {
       schema: []
     },
     create(context) {
+      const { ptMethod } = analysis(context);
       const WRITES = new Set(['add', 'edit', 'delete', 'batchAdd', 'batchEdit', 'batchDelete', 'addMessage']);
       // setX(prev => …) — a lone function argument to a setter-shaped call.
       const isStateUpdater = (node) =>
-        node.type === 'CallExpression' &&
+        node?.type === 'CallExpression' &&
         node.callee.type === 'Identifier' &&
         /^set[A-Z]/.test(node.callee.name) &&
         node.arguments.length === 1 &&
@@ -427,15 +559,20 @@ const rules = {
           const method = ptMethod(node);
           if (method === undefined || !WRITES.has(method)) return;
           for (let p = node.parent; p; p = p.parent) {
-            if (isStateUpdater(p)) {
+            if (!FUNCTION_TYPES.has(p.type)) continue;
+            const parent = p.parent;
+            if (isStateUpdater(parent) && parent.arguments[0] === p) {
               context.report({
                 node,
                 message:
-                  `pt.${method}() inside a ${p.callee.name}() updater runs twice under ` +
+                  `pt.${method}() inside a ${parent.callee.name}() updater runs twice under ` +
                   'StrictMode, writing a duplicate row. Read the value out of state first, then write.'
               });
               return;
             }
+            // An IIFE runs as part of the updater, so keep looking outward.
+            if (parent?.type === 'CallExpression' && parent.callee === p) continue;
+            return; // a function that is only DECLARED here: StrictMode does not run it
           }
         }
       };

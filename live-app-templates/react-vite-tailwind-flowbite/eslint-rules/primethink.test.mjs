@@ -35,9 +35,14 @@ const rules = plugin.rules;
 ruleTester.run('response-message-field', rules['response-message-field'], {
   valid: [
     'const res = await pt.waitForMessageReceived(); use(res.message);',
+    'use((await pt.waitForMessageReceived()).message);',
     // Unrelated object: `.text` is perfectly normal everywhere else.
     'const el = document.body; use(el.text);',
-    'const res = await other.waitForMessageReceived(); use(res.text);'
+    'const res = await other.waitForMessageReceived(); use(res.text);',
+    // A DIFFERENT binding that happens to share the name. Scope analysis, not text.
+    'function f(res) { return res.text; } const res = await pt.waitForMessageReceived();',
+    // A local `pt` is not the platform global.
+    'function f(pt) { const res = pt.waitForMessageReceived(); return res.text; }'
   ],
   invalid: [
     {
@@ -58,11 +63,15 @@ ruleTester.run('response-message-field', rules['response-message-field'], {
       code: 'let res; res = await pt.waitForMessageReceived(); use(res.text);',
       errors: 1
     },
-    // The read sits ABOVE the assignment that defines the shape.
+    // The read sits ABOVE the assignment that defines the shape — same binding,
+    // so deferring the report to Program:exit is what catches it.
     {
-      code: 'function f(res) { return res.text; } let res = await pt.waitForMessageReceived();',
+      code: 'let res; const read = () => res.text; res = await pt.waitForMessageReceived(); read();',
       errors: 1
     },
+    // Read straight off the awaited call, with no variable at all.
+    { code: 'use((await pt.waitForMessageReceived()).text);', errors: 1 },
+    { code: 'use((await window.pt.waitForMessageReceived()).content);', errors: 1 },
     // Destructured straight out of the call.
     {
       code: 'const { text } = await pt.waitForMessageReceived();',
@@ -87,7 +96,12 @@ ruleTester.run('on-entity-changed-arg-order', rules['on-entity-changed-arg-order
     { code: 'pt.onEntityChanged("task", (e) => use(e));', errors: 1 },
     { code: 'window.pt.onEntityChanged("task", (e) => use(e));', errors: 1 },
     { code: 'pt.onEntityChanged(`task`, (e) => use(e));', errors: 1 },
-    { code: 'pt.onEntityChanged({ entityName: "task" }, (e) => use(e));', errors: 1 }
+    { code: 'pt.onEntityChanged({ entityName: "task" }, (e) => use(e));', errors: 1 },
+    // ESTree gives `null` and a regex `typeof value === "object"`, so a value test
+    // would let them through. Every Literal is impossible in callback position.
+    { code: 'pt.onEntityChanged(null, (e) => use(e));', errors: 1 },
+    { code: 'pt.onEntityChanged(/task/, (e) => use(e));', errors: 1 },
+    { code: 'pt.onEntityChanged(0, (e) => use(e));', errors: 1 }
   ]
 });
 
@@ -108,7 +122,10 @@ ruleTester.run('list-entities-without-metadata', rules['list-entities-without-me
     // Two shapes on one name — no single answer, so no report.
     'let r = await pt.list({}); r = await pt.list({ returnMetadata: true }); use(r.entities);',
     // Unrelated object.
-    'const res = await api.fetch(); use(res.entities);'
+    'const res = await api.fetch(); use(res.entities);',
+    'use((await pt.list({ returnMetadata: true })).entities);',
+    // A different binding of the same name.
+    'function f(res) { return res.entities; } const res = await pt.list({});'
   ],
   invalid: [
     { code: 'const res = await pt.list({ entityNames: ["task"] }); use(res.entities);', errors: 1 },
@@ -117,7 +134,15 @@ ruleTester.run('list-entities-without-metadata', rules['list-entities-without-me
     { code: 'const res = await pt.list(); use(res.entities);', errors: 1 },
     { code: 'const res = await pt.list({ returnMetadata: false }); use(res.entities);', errors: 1 },
     // The SDK compares `=== true`, so a merely truthy value still yields a bare array.
-    { code: 'const res = await pt.list({ returnMetadata: 1 }); use(res.entities);', errors: 1 }
+    { code: 'const res = await pt.list({ returnMetadata: 1 }); use(res.entities);', errors: 1 },
+    // Read straight off the awaited call.
+    { code: 'use((await pt.list({})).entities);', errors: 1 },
+    // An Array.isArray somewhere in an enclosing conditional guards NOTHING unless it
+    // tests this binding and excludes the array case on this branch.
+    { code: 'const r = await pt.list({}); use(flag ? r.entities : Array.isArray(other));', errors: 1 },
+    { code: 'const r = await pt.list({}); const o = []; use(Array.isArray(o) ? o : r.entities);', errors: 1 },
+    // Right test, wrong branch: this reads `.entities` where the value IS an array.
+    { code: 'const r = await pt.list({}); use(Array.isArray(r) ? r.entities : r);', errors: 1 }
   ]
 });
 
@@ -144,7 +169,10 @@ ruleTester.run('no-web-storage', rules['no-web-storage'], {
     'localStorage.getItem("pt-theme");',
     'localStorage.setItem("pt-theme", "dark");',
     'window.localStorage.getItem("pt-theme");',
-    { code: 'localStorage.getItem("my-key");', options: [{ allowedKeys: ['my-key'] }] }
+    { code: 'localStorage.getItem("my-key");', options: [{ allowedKeys: ['my-key'] }] },
+    'localStorage.removeItem("pt-theme");',
+    // A local binding of the same name is not web storage.
+    'function f(localStorage) { localStorage.setItem("rows", "[]"); }'
   ],
   invalid: [
     { code: 'localStorage.setItem("rows", JSON.stringify(rows));', errors: 1 },
@@ -153,7 +181,10 @@ ruleTester.run('no-web-storage', rules['no-web-storage'], {
     { code: 'globalThis.sessionStorage.getItem("rows");', errors: 1 },
     { code: 'window["localStorage"].clear();', errors: 1 },
     // A non-theme key is still a violation even though the theme key is allowed.
-    { code: 'localStorage.setItem("pt-rows", "[]");', errors: 1 }
+    { code: 'localStorage.setItem("pt-rows", "[]");', errors: 1 },
+    // `clear()` ignores its argument and wipes everything — the key exception must
+    // not apply to a method that is not addressed by key.
+    { code: 'localStorage.clear("pt-theme");', errors: 1 }
   ]
 });
 
@@ -174,7 +205,11 @@ ruleTester.run('add-message-hidden', rules['add-message-hidden'], {
   invalid: [
     { code: 'pt.addMessage("hi", { stream: false });', errors: 1 },
     { code: 'window.pt.addMessage("hi", { stream: false });', errors: 1 },
-    { code: 'pt.addMessage("hi", { hidden: false });', errors: 1 }
+    { code: 'pt.addMessage("hi", { hidden: false });', errors: 1 },
+    // The SDK sends `hidden || false`, so every falsy literal posts a VISIBLE message.
+    { code: 'pt.addMessage("hi", { hidden: null });', errors: 1 },
+    { code: 'pt.addMessage("hi", { hidden: 0 });', errors: 1 },
+    { code: 'pt.addMessage("hi", { hidden: "" });', errors: 1 }
   ]
 });
 
@@ -187,12 +222,18 @@ ruleTester.run('no-pt-write-in-state-updater', rules['no-pt-write-in-state-updat
     'setRows((prev) => { pt.list("task"); return prev; });',
     'notSetter((prev) => { pt.add("task", row); return prev; });',
     // A setter called with a value, not an updater function.
-    'setRows(pt.add("task", row));'
+    'setRows(pt.add("task", row));',
+    // The updater only DECLARES this function; StrictMode does not run it, so the
+    // write does not double. Reporting it would be a false positive.
+    'setRows((prev) => { el.onclick = () => pt.add("task", row); return prev; });',
+    'setRows((prev) => { setTimeout(function () { pt.add("task", row); }, 0); return prev; });'
   ],
   invalid: [
     { code: 'setRows((prev) => { pt.add("task", row); return prev; });', errors: 1 },
     { code: 'setRows((prev) => { window.pt.add("task", row); return prev; });', errors: 1 },
     { code: 'setRows(function (prev) { pt.batchAdd("task", rows); return prev; });', errors: 1 },
-    { code: 'setRows((prev) => { pt.delete("task", id); return prev; });', errors: 1 }
+    { code: 'setRows((prev) => { pt.delete("task", id); return prev; });', errors: 1 },
+    // An IIFE does run as part of the updater.
+    { code: 'setRows((prev) => { (() => { pt.add("task", row); })(); return prev; });', errors: 1 }
   ]
 });

@@ -36,7 +36,9 @@ const cssFiles = names.filter((n) => n.endsWith('.css'));
 
 // A font fetched from a CDN sits behind the host's CSP and may run offline: it
 // fails silently and the app falls back to a system font mid-layout.
-const CDN_FONT = /https?:\/\/[^"'`\s)]*(?:fonts\.(?:googleapis|gstatic)\.com|\.woff2?\b)/;
+// The protocol is optional: `//fonts.googleapis.com/…` inherits the page's scheme and
+// fetches remotely just the same, so requiring `https?://` would let it through the gate.
+const CDN_FONT = /(?:https?:)?\/\/[^"'`\s)]*(?:fonts\.(?:googleapis|gstatic)\.com|\.woff2?\b)/;
 for (const name of textFiles) {
   const match = (await read(name)).match(CDN_FONT);
   if (match) {
