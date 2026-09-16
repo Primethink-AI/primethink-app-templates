@@ -157,6 +157,14 @@ belief. Prefer making the stub unnecessary.
 Cite spec clauses next to assertions (`// §4.2`). When one fails later, that is how you
 know whether the code is wrong or the spec moved.
 
+**`npm test` cannot import a `.jsx` file.** It is plain Node with no transform, so it
+reaches `src/lib/` and not your components. That is a constraint worth designing around
+rather than fighting: it is the same pressure as the rule above. Anything you want
+asserted cheaply has to be reachable without React. What is left in a component —
+rendering, props, wiring — is covered by `npm run test:ui` in a real browser, where it is
+worth testing anyway. If you genuinely need component unit tests, add Vitest; it shares
+this project's Vite config and handles JSX natively.
+
 Two clause types are worth writing even when they feel like overkill — both have a
 worked example in the skeleton:
 
