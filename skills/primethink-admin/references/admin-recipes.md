@@ -24,9 +24,10 @@ pt agent update <agent_id> \
   --capability process_documents --capability documents --capability rag_documents
 pt agent get <agent_id> | jq '.capabilities[].code'   # ALWAYS verify what landed
 ```
-`--capability` is repeatable and resolves env-specific ids for you. Read back with
-`agent get`: `resolve` may skip some user-scoped internal codes, and a group-scoped
-capability the group hasn't enabled is dropped silently.
+`--capability` is repeatable and resolves env-specific ids for you. A group-scoped
+capability the group hasn't enabled is dropped by the server, and since CLI 1.4.1 the
+response says so in `warnings: ["capabilities not applied …"]`. Still read back with
+`agent get`: `resolve` may skip some user-scoped internal codes.
 
 ## Invite a colleague to a chat by email
 ```bash

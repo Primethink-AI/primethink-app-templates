@@ -27,9 +27,21 @@ scheduled jobs, and search — plus the cross-workspace automation patterns
 
 ## Install / update
 
+**There is no CLI installer for this skill yet.** `pt install-skill` installs the bundled
+*primethink-cli* usage skill and `pt install-developer-skill` installs *primethink-developer*
+— neither fetches this one. Until an installer exists, copy it in:
+
+```bash
+git clone https://github.com/Primethink-AI/primethink-app-templates.git
+cp -R primethink-app-templates/skills/primethink-admin ~/.claude/skills/
+# ...or ./.claude/skills/ for a single project
+```
+
+Related, and installable today:
+
 ```bash
 pt install-skill                 # bundled CLI usage skill
-# This admin skill ships in primethink-app-templates/skills/pimethink-admin.
+pt install-developer-skill       # primethink-developer (building Live Apps/Tasks)
 ```
 
 Requires the `pt` CLI (`pip install primethink-cli`; add `[mcp]` for `pt mcp`).
@@ -137,8 +149,9 @@ pt agent create --name "Analyst" --public-description "…" --type-id 5 \
   --capability process_documents --capability documents --capability rag_documents
 pt agent get <id> | jq '.capabilities[].code'   # verify what actually landed
 ```
-Note: a group-scoped capability the group hasn't enabled is dropped silently — the
-`get` read-back is how you confirm.
+Note: a group-scoped capability the group hasn't enabled is dropped by the server. Since
+CLI 1.4.1 the response carries a `warnings: ["capabilities not applied …"]` entry naming the
+dropped ids, so check that — and still use the `get` read-back to confirm what landed.
 
 ### Invite a member by email
 `pt chat invite-members` and `pt group invite` accept emails; for chat invites

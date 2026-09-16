@@ -42,7 +42,7 @@ Test the script locally with the same env the sandbox gets — plus two hooks:
 >   the command in ONE place (the goal) and make the agent description point to it.
 > - **A launched chat copies the task goal at creation** — updating the task doesn't
 >   update existing chats; `pt chat goal <id> --goal-file GOAL.md` them too.
-> - `pt task publish` hard-codes `chat_history`, `documents_and_collections_enabled`,
+> - On CLI < 1.5.0, `pt task publish` hard-coded `chat_history`, `documents_and_collections_enabled`,
 >   `scheduled_jobs_enabled` (and more) to **false** — set them with `pt task update`.
 > - `pt chat send` returns before the sandbox run finishes — poll `state.last_checked`.
 > - Timestamps differ: messages `…T…Z`, ChatDB `YYYY-MM-DD HH:MM:SS+00:00` — normalise.

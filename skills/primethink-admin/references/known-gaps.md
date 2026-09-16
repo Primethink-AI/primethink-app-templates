@@ -34,12 +34,16 @@ cost hours.
   leave some **user-scoped internal codes unresolved** (e.g. `rag`) even though they
   are assignable by id — so always **read the agent back** (`pt agent get <id> |
   jq '.capabilities[].code'`) to confirm what actually landed.
-- A **non-default, group-scoped capability the group hasn't enabled** (e.g.
-  `rag_messages`) is still **silently dropped** on assign — the read-back catches it.
+- A **non-default, group-scoped capability the group hasn't enabled** (e.g. `rag_messages`) is
+  still dropped by the server on assign, but no longer *silently*: since CLI 1.4.1 the response
+  carries `warnings: ["capabilities not applied (not available for this group?): […]"]`. Check
+  the warnings, and use the read-back to confirm what landed.
 - Setting the group default agent is `pt settings set default_agent <id> --scope group`.
 
-## Notifications (CLI gap)
-- **No `pt notification` command.** Read via REST:
+## Notifications
+- **Reading notifications:** use `pt notification list` / `unread-count` / `mark-read` /
+  `mark-unread` / `mark-all-read` / `delete` (added in CLI 1.4.1). The REST equivalents, if
+  you need them directly:
   `GET /api/v1/notifications?page=1&page_size=50` with `Authorization: Token <key>`.
   Payload keys: `id, user_id, title, text, unread, chat_id, chat_uuid,
   chat_message_id, group_id, parent_chat_*, created_at`. Also
@@ -58,9 +62,10 @@ cost hours.
 - Live-app deploy artifacts must be flat; nested files are rejected.
 
 ## Tasks & the Deep1 sandbox (task-based automations)
-- `pt task publish` creates the task with `chat_history`, `documents_and_collections_enabled`,
-  `scheduled_jobs_enabled`, `global_memory`, `search_in_*` all **false** (project dirs
-  carry no flags). Fix after publish: `pt task update <id> --chat-history --docs-enabled --scheduled-jobs`.
+- `pt task publish` accepts `--type` and the feature toggles directly since CLI 1.5.0, and
+  reads an optional `task.json` from the project dir (option > `task.json` > defaults). On
+  **older CLIs** everything defaulted to false and needed a follow-up
+  `pt task update <id> --chat-history --docs-enabled --scheduled-jobs`.
 - Launching a task (UI) creates a chat with `task_id`/`from_task_id`, **copies the goal**
   (later task edits don't propagate — `pt chat goal` existing chats) and links the
   task's documents (same document ids). There is **no CLI/REST route** to launch a task
@@ -95,14 +100,27 @@ cost hours.
 - **`pt notification`** — `list`, `unread-count`, `mark-read`, `mark-unread`,
   `mark-all-read`, `delete`. (Verified read/unread round-trip.)
 
+## Closed in v1.5.0 ✅
+- **`pt task launch TASK_ID [--workspace-id ID|UUID]`** — launches a task into a new chat the
+  way the web app does; `pt chat create --from-task-id` does the same generically.
+- **`pt task publish` task type and feature toggles** — `--type` plus the eleven `--…/--no-…`
+  toggles, and an optional `task.json` in the project dir (option > `task.json` > defaults).
+  Publishing no longer needs a follow-up `pt task update`.
+- **Warnings when a capability is dropped** — the create/update response carries
+  `warnings: ["capabilities not applied (not available for this group?): […]"]` instead of the
+  assignment diverging unremarked.
+
+## Closed on the platform ✅
+- **"Document 'None' has been added to the chat"** on task launch — fixed by primethink-api#606,
+  which sets per-link document names when documents are linked by id (the same bug also made
+  task documents unreachable in the Deep1 sandbox).
+
 ## Still open
 1. **Notification send** — no CLI/REST endpoint; only a Live App's `pt.sendNotification`.
 2. **`pt capability resolve`** doesn't resolve some user-scoped internal codes (e.g.
    `rag` → unresolved, while `documents`/`rag_documents` resolve). Always verify with
    `pt agent get`.
-3. **Warn (don't silently drop)** when a requested capability isn't available to the group.
-4. Roles CRUD / audit logs / bulk delete.
-5. **Launch a task into a workspace** via CLI/API (needed to auto-provision task-based
-   automations across workspaces).
-6. `pt task publish` should accept the task flags (or read them from the project dir).
-7. Platform: task launch posts "Document 'None' has been added to the chat".
+3. Roles CRUD / audit logs / bulk delete.
+4. **Launch a task into a workspace** via CLI/API. `pt task launch TASK_ID --workspace-id ID`
+   shipped in CLI 1.5.0, so this is closed for the common case; what remains is bulk
+   auto-provisioning across many workspaces.

@@ -44,7 +44,7 @@ admin-relevant ones; run `pt <group> <cmd> --help` for the complete list.
 ## chat
 - `pt chat list [--workspace-id <id>] [--search -s] [--starred] [--archived] [--page --page-size --sort]`
 - `pt chat create --name <n> [--goal/--goal-file] [--virtual-assistant-id] [--workspace-id] [--type] [--public] [--member <id>…]`
-- `pt chat rename <id> <name>` · `pt chat goal <id> <goal>` · `pt chat type <id> …`
+- `pt chat rename <id> <name>` · `pt chat goal <id> --goal <text> | --goal-file <path>` · `pt chat type <id> …`
 - `pt chat messages <id> [--size --before-message-id --after-message-id --anchor-message-id]`
 - `pt chat archive/unarchive/delete <id> [--yes]`
 - `pt chat list-users <id>`
@@ -69,8 +69,11 @@ admin-relevant ones; run `pt <group> <cmd> --help` for the complete list.
 - `pt task update <id> [--type … other fields]` · `pt task get <id>`
 - `pt task set-public <id>` · `pt task set-private <id>`
 - `pt task publish <dir> --virtual-assistant-id <id> [--task-id <id>]` — reads `.name.config`,
-  `.description.config`, `GOAL.md`, `INITIAL_PROMPT.md`; all task flags default **off** → follow with
-  `pt task update <id> --type group --chat-history --docs-enabled --scheduled-jobs`.
+  `.description.config`, `GOAL.md`, `INITIAL_PROMPT.md`. Since CLI 1.5.0 it also takes `--type`
+  and every feature toggle (`--chat-history`, `--docs-enabled`, `--scheduled-jobs`, …, each with
+  a `--no-…` form), and reads an optional `task.json` from the project dir.
+  Precedence: option > `task.json` > defaults, so a publish no longer needs a follow-up
+  `pt task update`. On **older CLIs** the flags all defaulted off and did.
 - Task flags on `create/update`: `--global-memory`, `--chat-history`, `--search-in-chat`,
   `--search-in-documents`, `--summary-enabled`, `--docs-enabled`, `--scheduled-jobs`,
   `--email-integration`, `--share-action`, `--public-chat`, `--run-immediately` (each has a `--no-…`).
@@ -109,11 +112,11 @@ admin-relevant ones; run `pt <group> <cmd> --help` for the complete list.
 ## eval — task evaluation (test/QA a task)
 - `pt eval list <task_id>` — the evaluation plan (items).
 - `pt eval add <task_id> --user-query <q> --ideal-response <r> --type exact|similar|agent [--evaluator-agent-id --chat-group --examples]`
-- `pt eval update <id> [fields]` · `pt eval delete <id>`
+- `pt eval update <task_id> <evaluation_data_id> [fields]` · `pt eval delete <task_id> <evaluation_data_id>`
 - `pt eval settings <task_id> [plan settings]`
-- `pt eval run <task_id>` → run the evaluation; `pt eval runs <task_id>` · `pt eval run-get <run_id>` · `pt eval download <run_id>`
+- `pt eval run <task_id>` → run the evaluation; `pt eval runs <task_id>` · `pt eval run-get <task_id> <run_id>` · `pt eval download <task_id> <run_id>`
 - `pt eval results <task_id> [--run-id]`
-- `pt eval simulate <task_id> …` (multi-turn simulation) · `pt eval simulations <task_id>` · `pt eval delete-simulation <id>`
+- `pt eval simulate <task_id> …` (multi-turn simulation) · `pt eval simulations <task_id>` · `pt eval delete-simulation <task_id> <simulation_id>`
 
 ### Choosing `--type` (the decision that matters)
 
@@ -141,11 +144,12 @@ admin-relevant ones; run `pt <group> <cmd> --help` for the complete list.
   group; keep a genuine multi-turn case's items adjacent. Since the default is `1`, a plan
   built without passing `--chat-group` collapses into one N-turn conversation.
 - **Always set an evaluator first:** `pt eval settings <task_id> --evaluator-agent-id <id>`
-  (also `--pass-threshold`, an **integer 1–100** — `80` for an 80% gate, not `0.8`; the CLI
-  declares it as a float but the API schema is `conint(gt=0, le=100)`, so a fractional value
-  is rejected and `1` means one percent. Note `pt task` spells the same setting
-  `--evaluation-pass-threshold`; `--active/--inactive`, `--run-time`,
-  `--message-delay-ms`). The API rejects **every** run with 400 *"doesn't have a default
+  (also `--pass-threshold`, an **integer 1–100** — `80` for an 80% gate, not `0.8`; the API
+  schema is `conint(gt=0, le=100)`, so `1` means *one percent*. On CLI ≤ 1.5.0 the option was
+  typed as a float and documented `0-1`, so a fraction reached the API and came back a 422;
+  since primethink-cli#23 it is an `IntRange(1, 100)` and fails at the CLI instead. Note
+  `pt task` spells the same setting `--evaluation-pass-threshold`; also `--active/--inactive`,
+  `--run-time`, `--message-delay-ms`). The API rejects **every** run with 400 *"doesn't have a default
   evaluator agent ID"* when this is unset — `exact`/`similar`-only plans included, and a
   per-item evaluator does not satisfy it. Prefer a purpose-built evaluator — borrowing a
   persona or reviewer agent drags its own instructions into the judgement.
