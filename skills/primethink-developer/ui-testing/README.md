@@ -283,10 +283,13 @@ def _authorize(route, request):
 
 page.route("**/*", _authorize)
 page.goto(f"{host}/api/v1/live/{chat_uuid}")
-```
 
-Redirects inherit overridden headers, so if the endpoint ever redirects off-host,
-follow it manually rather than letting the header ride along.
+# Redirects inherit the overridden headers, and Playwright follows them internally
+# without re-firing the route handler — so the origin check above cannot catch a
+# redirect that leaves the host. Assert where you actually landed. (No live-app
+# route redirects today, so this is a tripwire, not a live concern.)
+assert _origin(page.url) == _TRUSTED, f"navigation left the trusted origin: {page.url}"
+```
 
 The `pt` runtime's own API calls do not need this header — it authenticates with the
 `X-CSRF-Token` / `X-Scoped-Token` pair the page was served with, so the header is only
@@ -335,8 +338,11 @@ Shape of the check, once authentication is sorted:
   action: click
   target: { role: button, name: "Add card" }
 - id: persist.reload
-  action: navigate           # re-navigating the same URL is the reload
-  url: /                     # resolved against base_url; see the warning above
+  action: navigate
+  # Re-navigating IS the reload, so this must be the same URL the scenario opened.
+  # A bare `/` would resolve against base_url to the host root, not the page under
+  # test, and the assertion below would then fail for the wrong reason.
+  url: https://app-dev.primethink.ai/api/v1/live/25189fe0-aacf-4205-80f3-bb0d98d04be5
 - id: persist.still-there
   action: expect_visible
   target: { text: "My new card" }

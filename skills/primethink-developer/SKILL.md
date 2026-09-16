@@ -352,9 +352,11 @@ Other things worth knowing before you build a plan:
   a plan built without passing `--chat-group` collapses into a single N-turn conversation.
 - **Always set an evaluator agent before any run:**
   `pt eval settings <task_id> --evaluator-agent-id <id>` (optionally `--pass-threshold`, an
-  **integer 1–100** — pass `80` for an 80% gate, not `0.8`. The CLI declares this option as a
-  float, but the API schema is `conint(gt=0, le=100)`, so a fractional value is rejected and
-  `1` means one percent). The API rejects a run with 400 *"doesn't have a default evaluator agent ID"*
+  **integer 1–100** — pass `80` for an 80% gate, not `0.8`; the API schema is
+  `conint(gt=0, le=100)`, so `1` means *one percent*. On CLI ≤ 1.5.0 the option was typed as a
+  float and documented as `0-1`, so a fraction reached the API and came back a 422 — since
+  primethink-cli#23 it is an `IntRange(1, 100)` and fails at the CLI instead).
+  The API rejects a run with 400 *"doesn't have a default evaluator agent ID"*
   **regardless of item types** — an `exact`- or `similar`-only plan fails the same way, and a
   per-item evaluator does not satisfy it. Prefer a purpose-built evaluator over borrowing an
   unrelated agent: a reviewer or persona agent brings its own instructions into the judgement.
