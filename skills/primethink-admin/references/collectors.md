@@ -6,20 +6,23 @@ Cross-workspace activity monitoring. Two implementations, both proven:
 A **Deep1** agent has a `/sandbox` (Python 3.12 + network) and the platform injects
 `PT_TOKEN`, `PT_BASE_URL`, `PT_CHAT_ID`, `PT_CHAT_UUID`, `PT_GROUP_ID`, `PT_AGENT_ID`,
 `PT_USER_ID`, `PT_TURN_ID` into it. The collector is therefore a **published Task**
-that any user launches into a workspace from the UI:
+launched into a workspace — from the UI, or with
+`pt task launch <task_id> --workspace-id <id|uuid>`:
 
 1. **Agent** (Deep1, e.g. `openai:gpt-5.6-sol`, no capabilities needed): "Workspace
    Activity Collector". Its description defers to the chat goal for the exact command
    and forbids anything else (it refuses diagnostics — by design).
-2. **Task** (`pt task publish <dir> --virtual-assistant-id <agent>`, then
-   `pt task update <id> --type group --chat-history --docs-enabled --scheduled-jobs`)
-   with `collector_sandbox.py` attached (`pt task add-docs`). `GOAL.md` step 1 is a
+2. **Task** — one publish call carries the type and toggles:
+   `pt task publish <dir> --virtual-assistant-id <agent> --type group --chat-history
+   --docs-enabled --scheduled-jobs`, with `collector_sandbox.py` attached
+   (`pt task add-docs`). `GOAL.md` step 1 is a
    **bootstrap heredoc** the agent runs verbatim: it lists the chat's documents,
    downloads the newest `collector_sandbox.py` (`GET /api/v1/documents/{id}/download`
    with the injected token), runs it, and prints its JSON.
-3. **Launch**: a user opens the task inside a workspace → the platform creates a chat
-   with `task_id`/`from_task_id`, copies the goal, sets the agent as default VA and
-   links the task's document. Say "Collect now." — the script derives the workspace
+3. **Launch**: `pt task launch <task_id> --workspace-id <id|uuid>`, or a user opening the
+   task inside a workspace. Either way the platform creates a chat with
+   `task_id`/`from_task_id`, copies the goal, sets the agent as default VA and links the
+   task's document. Say "Collect now." — the script derives the workspace
    from `PT_CHAT_ID`, diffs since the last run and writes into THIS chat:
    `workspace_rollup`, `chat_activity` (with author names, newest excerpts, live-app
    ChatDB per-entity new/updated counts + record previews), `notification` entities,
@@ -42,17 +45,20 @@ Test the script locally with the same env the sandbox gets — plus two hooks:
 >   the command in ONE place (the goal) and make the agent description point to it.
 > - **A launched chat copies the task goal at creation** — updating the task doesn't
 >   update existing chats; `pt chat goal <id> --goal-file GOAL.md` them too.
-> - `pt task publish` takes these as flags; if you omit them they default to false:
-> - `chat_history`, `documents_and_collections_enabled`,
->   `scheduled_jobs_enabled` (and more) to **false** — set them with `pt task update`.
+> - `pt task publish` takes the task type and the feature toggles as flags, and reads an
+>   optional `task.json`. Omitted toggles default to **false**, so pass the ones the collector
+>   needs (`--type group --chat-history --docs-enabled --scheduled-jobs`) on the publish itself.
 > - `pt chat send` returns before the sandbox run finishes — poll `state.last_checked`.
 > - Timestamps differ: messages `…T…Z`, ChatDB `YYYY-MM-DD HH:MM:SS+00:00` — normalise.
 > - Chat-list workspace filter is **`chat_workspace_id`** (detail uses `workspace_id`);
 >   ChatDB REST = POST `/chats/{id}/chatdb/list`, POST/PATCH(`entity_id`)/DELETE
 >   `/chats/{id}/chatdb/entities`; `POST /chats/{id}/texts` takes a **list**.
-> - **No CLI/REST route to launch a task into a workspace** (`POST /chats` ignores
->   `task_id`/`from_task_id`) — provisioning is a UI step; the group collector can only
->   report workspaces without a collector (detect by `task_id == <collector task>`).
+> - **Launch a task into a workspace from the CLI** with
+>   `pt task launch <task_id> --workspace-id <id|uuid>` (or
+>   `pt chat create --from-task-id <task_id>`), which goes through `?copy_from_task_id=`.
+>   Note a bare `POST /chats` ignores a body `task_id`/`from_task_id`. Because provisioning is
+>   scriptable, the group collector can **auto-provision** a missing collector rather than only
+>   reporting it (detect by `task_id == <collector task>`).
 > - The `sandbox` *capability* (id 28) is unrelated — Deep1 provides the sandbox.
 
 ## B. External CLI/REST engine + Live App front-end (no sandbox needed)
