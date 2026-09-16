@@ -336,11 +336,9 @@ looks broken:
 > near-canonical strings and not free-form prose. **Default conversational tasks to `agent`**,
 > and sanity-check one item before building a whole plan on `similar`.
 >
-> *Version note:* on deployments before the fix in primethink-api#649, `similar` was far worse
-> than merely lexical — a `difflib` heuristic collapsed the score for **any** expected answer
-> of roughly 200 characters or more, so a faithful paraphrase measured **13/100** where `agent`
-> scored **98/100**. If you see implausibly low `similar` scores on long answers, check whether
-> that fix is deployed before rewriting the task.
+> If a long answer you believe is correct scores implausibly low, do not rewrite the task
+> first — score the same pair under `agent` and compare. A large gap means the scorer, not
+> the answer.
 
 Other things worth knowing before you build a plan:
 
@@ -352,10 +350,7 @@ Other things worth knowing before you build a plan:
   a plan built without passing `--chat-group` collapses into a single N-turn conversation.
 - **Always set an evaluator agent before any run:**
   `pt eval settings <task_id> --evaluator-agent-id <id>` (optionally `--pass-threshold`, an
-  **integer 1–100** — pass `80` for an 80% gate, not `0.8`; the API schema is
-  `conint(gt=0, le=100)`, so `1` means *one percent*. On CLI ≤ 1.5.0 the option was typed as a
-  float and documented as `0-1`, so a fraction reached the API and came back a 422 — since
-  primethink-cli#23 it is an `IntRange(1, 100)` and fails at the CLI instead).
+  **integer 1–100** — pass `80` for an 80% gate, not `0.8`; `1` means *one percent*).
   The API rejects a run with 400 *"doesn't have a default evaluator agent ID"*
   **regardless of item types** — an `exact`- or `similar`-only plan fails the same way, and a
   per-item evaluator does not satisfy it. Prefer a purpose-built evaluator over borrowing an
