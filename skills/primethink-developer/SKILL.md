@@ -304,6 +304,102 @@ there is no task.
 - These commands publish a **local project directory**. Inside a Deep1 sandbox you deploy by
   copying the flat `dist/` contents into `/documents/app/` instead (above).
 
+## The Full Lifecycles — do not stop at "it builds"
+
+Publishing is the middle of the job, not the end. Both a Task and a Live App have a
+verification stage after deployment, and skipping it is the single most common way work is
+reported as finished when it does not work.
+
+### Task lifecycle
+
+```
+create/publish  →  build an evaluation plan  →  run  →  read results  →  fix  →  re-run
+   pt task          pt eval add                pt eval run   pt eval results
+```
+
+The evaluation surface is `pt eval` (13 subcommands) — note it is **top level, not under
+`pt task`**, so `pt task --help` gives no hint it exists. The same operations exist as agent
+tools in the `primethink_admin` capability (`primethink_add_task_evaluation`,
+`primethink_run_task_evaluation`, `primethink_get_task_evaluation_results`, …).
+
+**Choosing `evaluation_type` is the decision that matters.** Get it wrong and a healthy task
+looks broken:
+
+| type | use it for | avoid it for |
+|---|---|---|
+| `exact` | enum values, ids, one-word answers | anything a model phrases freely |
+| `similar` | **short, near-canonical strings only** | **prose — see the warning below** |
+| `agent` | conversational answers, refusals, tone, multi-criteria judgement | high-volume cheap checks (it costs a model call per item) |
+
+> ⚠️ **`similar` is a lexical ratio — it rewards shared wording, not shared meaning.** A
+> correct answer that restructures the sentence is marked down, so it suits short,
+> near-canonical strings and not free-form prose. **Default conversational tasks to `agent`**,
+> and sanity-check one item before building a whole plan on `similar`.
+>
+> If a long answer you believe is correct scores implausibly low, do not rewrite the task
+> first — score the same pair under `agent` and compare. A large gap means the scorer, not
+> the answer.
+
+Other things worth knowing before you build a plan:
+
+- **`chat_group` groups *contiguous* items into one conversation, and defaults to `1`.**
+  Items are executed in id order, and the worker opens a new chat whenever the group value
+  changes — so groups `1,2,1` produce **three** chats, not two, and the second group-1 item
+  loses the first one's context. For N independent single-turn tests give each item its own
+  group; for a genuine multi-turn case keep its items adjacent. Because the default is `1`,
+  a plan built without passing `--chat-group` collapses into a single N-turn conversation.
+- **Always set an evaluator agent before any run:**
+  `pt eval settings <task_id> --evaluator-agent-id <id>` (optionally `--pass-threshold`, an
+  **integer 1–100** — pass `80` for an 80% gate, not `0.8`; `1` means *one percent*).
+  The API rejects a run with 400 *"doesn't have a default evaluator agent ID"*
+  **regardless of item types** — an `exact`- or `similar`-only plan fails the same way, and a
+  per-item evaluator does not satisfy it. Prefer a purpose-built evaluator over borrowing an
+  unrelated agent: a reviewer or persona agent brings its own instructions into the judgement.
+- **`good_example_*` / `bad_example_*` calibrate `similar`.** Without them the score is the raw
+  ratio with nothing to anchor it.
+- **Evaluation runs create one chat per contiguous `chat_group`** — a 6-item plan run twice
+  leaves ~12 chats. Budget for the clutter, or clean up afterwards.
+- **Simulations** (`pt eval simulate`) drive a multi-turn conversation with a simulated user.
+  They are the right tool for behaviour *under pressure* across turns — scope discipline,
+  refusals, a user who pushes back — which single-turn items cannot reach. **Grading is opt-in:**
+  pass `--evaluation-prompt` (and an evaluator), or the run finishes with `response: null` and
+  no score at all.
+
+### Live App lifecycle
+
+```
+build  →  publish  →  test the REAL runtime  →  fix  →  re-publish
+ npm run build   pt live-app publish/test    ui-testing/
+```
+
+**A local `vite preview` is not a test.** It has no `window.pt`, so persistence, `pt.add` /
+`pt.list` and real-time sync cannot be exercised there at all — and the missing runtime tempts
+you into writing defensive guards against an absence that only exists in your test harness.
+
+Test against the authenticated live endpoint instead:
+
+```
+GET https://<host>/api/v1/live/<CHAT_UUID>      # UUID, not the integer chat id
+Authorization: Token <PT_API_KEY>
+```
+
+That request mints the CSRF and scoped tokens, sets the cookies and returns the page with
+`window.pt` live from first paint. `https://<host>/live/<chat_id>` is a *different* thing — the
+frontend runner, behind an interactive sign-in an API key cannot open.
+
+**Scope the credential to the PrimeThink host.** Use `page.route` to add the header only for
+requests to `<host>`; a context-wide `set_extra_http_headers` attaches the key to *every*
+request, and the served page loads `https://cdn.socket.io/...` — which would send a
+long-lived API key to a CDN. The bundled `run_plan.py` cannot set headers at all yet, so drive
+this from a short Playwright script (see `ui-testing/README.md`).
+
+**Always finish a persistence check with a reload.** Adding a row and asserting it is on screen
+proves nothing: an in-memory `useState` implementation passes that too. Add → reload →
+re-assert is the only version of the test that means anything, and "everything is still there
+when I reload" is usually the requirement the user actually cares about.
+
+Full mechanics, plan schema and the runner: `ui-testing/README.md`.
+
 ## Dynamic Page Types: HTML and React
 
 A dynamic Live App is deployed as source files in the chat's `@app` folder; `page_type` tells the platform how to render the entry file.

@@ -219,22 +219,150 @@ are in `../references/developer-guide/responsive-live-apps.md`.
 
 ## Authentication
 
-The runner starts a fresh browser, so it must establish a session. By default it
-seeds the **pt API token** into the app's `localStorage` before the app's scripts
-run (token resolved from `PRIMETHINK_TOKEN`, else the active profile in
-`~/.primethink/config.json` — same as the CLI).
+### Test the REAL runtime, not a local preview
 
-> ⚠️ **Verify the injection key against the web app.** The default seeds the token
-> under `localStorage["token"]` / `["authToken"]`. If the real web app uses a
-> different key (or a cookie), set it in the plan `auth:` header, or bypass token
-> seeding with a saved session:
+**A local `vite preview` inside the sandbox has no `window.pt`.** Nothing that touches
+ChatDB — persistence, `pt.add`/`pt.list`, real-time sync — can be verified there, and the
+app will appear broken in ways that tempt you into writing defensive guards against a
+runtime that simply is not present. If your only check is a local preview, you have not
+tested the thing the user opens.
+
+Point the browser at the **authenticated live-app endpoint** instead:
+
+```
+GET https://<host>/api/v1/live/<CHAT_UUID>
+Authorization: Token <PT_API_KEY>
+```
+
+One request does all the session setup: the server authenticates the API key, **mints a
+CSRF token and a chat-scoped token, injects them into the returned HTML and sets them as
+cookies**, and wires `<base href>` to the app's file route. The page comes back with
+`window.pt` live from first paint — no sign-in, no `localStorage` guessing, no captured
+session file.
+
+Two traps, both easy to hit:
+
+- **It takes the chat UUID, not the integer chat id.** Agents see `chat_id: 50301`
+  everywhere, but the live route wants `25189fe0-aacf-4205-80f3-bb0d98d04be5`. There is no
+  `pt chat get`; take the `uuid` field from `pt chat list` (it dumps raw JSON), or from the
+  response `pt chat create` prints when you make the chat.
+- **`/live/<id>` and `/api/v1/live/<uuid>` are different things.** The bare
+  `https://<host>/live/<chat_id>` is the *frontend* app runner, behind an interactive
+  sign-in wall; an API key will not open it. Always use the `/api/v1/` form for
+  automated testing.
+
+In Playwright, attach the header **only to requests for the PrimeThink host**:
+
+```python
+from urllib.parse import urlsplit
+
+host = "https://app-dev.primethink.ai"
+
+def _origin(url):
+    """(scheme, hostname, effective port) — the only safe basis for comparison."""
+    parts = urlsplit(url)
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    return (parts.scheme, (parts.hostname or "").lower(), port)
+
+_TRUSTED = _origin(host)
+
+# Scope the credential with page.route. Do NOT use
+# context.set_extra_http_headers({"Authorization": ...}) — that attaches the key to
+# EVERY request the context makes, including third-party origins, and the served
+# page loads https://cdn.socket.io/..., so it would send a long-lived PT API key
+# to a CDN.
+#
+# Compare PARSED ORIGINS, never a string prefix: `url.startswith(host)` also matches
+# https://app-dev.primethink.ai.evil.example/ and https://app-dev.primethink.ai:8443/,
+# which would leak the key to a lookalike host (CWE-346).
+def _authorize(route, request):
+    if _origin(request.url) == _TRUSTED:
+        route.continue_(headers={**request.headers, "Authorization": f"Token {api_key}"})
+    else:
+        route.continue_()
+
+page.route("**/*", _authorize)
+page.goto(f"{host}/api/v1/live/{chat_uuid}")
+
+# Redirects inherit the overridden headers, and Playwright follows them internally
+# without re-firing the route handler — so the origin check above cannot catch a
+# redirect that leaves the host. Assert where you actually landed. (No live-app
+# route redirects today, so this is a tripwire, not a live concern.)
+assert _origin(page.url) == _TRUSTED, f"navigation left the trusted origin: {page.url}"
+```
+
+The `pt` runtime's own API calls do not need this header — it authenticates with the
+`X-CSRF-Token` / `X-Scoped-Token` pair the page was served with, so the header is only
+needed to get the document itself.
+
+Assert the runtime exists before anything else — a page that loaded without `pt` fails
+every ChatDB assertion for the wrong reason, which is a slow and confusing way to debug:
+
+```python
+assert page.evaluate("typeof window.pt !== 'undefined'"), "pt runtime missing — check auth/URL"
+```
+
+> **The bundled `run_plan.py` cannot do this yet.** It only seeds a token into
+> `localStorage` (`auth:` in the plan) or replays a `--storage-state` session; there is no
+> header support. Until that is added, drive the API-key route from a short Playwright
+> script as above, or use `--storage-state`. Do not write a plan that navigates to
+> `/api/v1/live/<uuid>` and expect the runner to authenticate it — it will not.
+
+### Persistence must be tested with a reload
+
+The point of ChatDB is that state survives. A test that adds a row and asserts it is on
+screen proves nothing — an in-memory `useState` implementation passes it too. Always end a
+persistence scenario by reloading and re-asserting.
+
+**The runner has no `reload` action.** Re-navigate to the same URL instead, and note the
+assertion is `expect_visible` (not `assert_visible`).
+
+> ⚠️ **A plan cannot navigate to `/api/v1/live/<uuid>` on its own.** That document requires
+> an `Authorization` header, and the runner cannot send one — a saved `--storage-state`
+> session carries cookies, not the header, and `localStorage` seeding does not authenticate
+> the document request either. So the re-navigation below would land on an unauthenticated
+> page and the assertion would fail for the wrong reason.
 >
-> ```bash
-> # Capture a session once (headed), then reuse it headless:
-> #   from playwright.sync_api import sync_playwright
-> #   ... log in manually ... context.storage_state(path="ui-auth.json")
-> python run_plan.py tests/test_plan.yaml --storage-state ui-auth.json
-> ```
+> Two ways to run a persistence check today:
+>
+> 1. **Custom Playwright script** (preferred) — use the `page.route` pattern above, then
+>    `page.goto(url)` a second time and re-assert. This is the only route that exercises the
+>    real runtime.
+> 2. **Plan + `--storage-state`** against a URL the saved session can open, accepting that
+>    you are testing the frontend runner rather than the API endpoint.
+
+Shape of the check, once authentication is sorted:
+
+```yaml
+- id: persist.add
+  action: click
+  target: { role: button, name: "Add card" }
+- id: persist.reload
+  action: navigate
+  # Re-navigating IS the reload, so this must be the same URL the scenario opened.
+  # A bare `/` would resolve against base_url to the host root, not the page under
+  # test, and the assertion below would then fail for the wrong reason.
+  url: https://app-dev.primethink.ai/api/v1/live/25189fe0-aacf-4205-80f3-bb0d98d04be5
+- id: persist.still-there
+  action: expect_visible
+  target: { text: "My new card" }
+```
+
+### Fallback: a saved session
+
+For the frontend app runner, or any flow the API key cannot reach, capture a session once
+and reuse it:
+
+```bash
+# Capture a session once (headed), then reuse it headless:
+#   from playwright.sync_api import sync_playwright
+#   ... log in manually ... context.storage_state(path="ui-auth.json")
+python run_plan.py tests/test_plan.yaml --storage-state ui-auth.json
+```
+
+Legacy `localStorage` token seeding is still supported via the plan `auth:` header, but
+prefer the API-key route above: it is verified against the server's own auth path rather
+than guessing at a storage key.
 
 ## Runner options
 
