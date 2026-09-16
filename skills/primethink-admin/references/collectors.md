@@ -42,7 +42,8 @@ Test the script locally with the same env the sandbox gets — plus two hooks:
 >   the command in ONE place (the goal) and make the agent description point to it.
 > - **A launched chat copies the task goal at creation** — updating the task doesn't
 >   update existing chats; `pt chat goal <id> --goal-file GOAL.md` them too.
-> - On CLI < 1.5.0, `pt task publish` hard-coded `chat_history`, `documents_and_collections_enabled`,
+> - `pt task publish` takes these as flags; if you omit them they default to false:
+> - `chat_history`, `documents_and_collections_enabled`,
 >   `scheduled_jobs_enabled` (and more) to **false** — set them with `pt task update`.
 > - `pt chat send` returns before the sandbox run finishes — poll `state.last_checked`.
 > - Timestamps differ: messages `…T…Z`, ChatDB `YYYY-MM-DD HH:MM:SS+00:00` — normalise.
@@ -57,8 +58,8 @@ Test the script locally with the same env the sandbox gets — plus two hooks:
 ## B. External CLI/REST engine + Live App front-end (no sandbox needed)
 Older/alternative approach — an external script (admin token) collects and writes
 the same ChatDB entities; a Live App renders the dashboard. Use if you can't run a
-Deep1 sandbox. Because in-product agents historically couldn't call the CLI, and a
-Live App's `pt` API is chat-scoped, collection runs **externally** and writes into a
+Deep1 sandbox. Because a Live App's `pt` API is chat-scoped and this path has no agent
+sandbox to run the CLI in, collection runs **externally** and writes into a
 per-workspace **collector chat**; a Live App renders the dashboard + mini-chat.
 
 ## Architecture

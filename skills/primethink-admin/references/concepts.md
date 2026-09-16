@@ -60,7 +60,7 @@ process_documents, documents, web search, canvas, subchats, scheduled_prompts…
   (resolved from group/user settings). Unresolved placeholders → capability skipped.
 - A capability that fails to build is skipped with a logged error, not fatal.
 - Assigning a group-scoped, non-default capability the group hasn't enabled is dropped
-  by the server (e.g. `rag_messages`). Since CLI 1.4.1 the response carries a
+  by the server (e.g. `rag_messages`). The response carries a
   `warnings: ["capabilities not applied …"]` entry — check it, and verify with a read-back.
 
 ## Collections & documents (RAG)

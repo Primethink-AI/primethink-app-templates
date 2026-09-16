@@ -72,7 +72,7 @@ pt profile add -t sk_xxx -p prod -u https://api.primethink.ai
   hardcode IDs across environments — resolve them by name/code at runtime.
 - **The active group is decisive.** `create_agent`/`create_chat`/`list_capabilities`
   and group-settings all resolve against the token's active group. `pt whoami`
-  now reports it — check it before creating anything. See
+  reports it — check it before creating anything. See
   [references/known-gaps.md](references/known-gaps.md).
 
 **Output:** every API command prints pretty JSON to stdout (empty/`204`
@@ -135,7 +135,7 @@ pt settings set default_agent 265 --scope group   # set the group's default assi
 ```
 
 ### Create a capable agent (assign capabilities inline, by code)
-As of CLI v1.4.1, `pt agent create/update` take `--capability <code>` (repeatable)
+`pt agent create/update` take `--capability <code>` (repeatable)
 and resolve codes → ids for the active environment for you, so you never hardcode
 env-specific ids. (Without any `--capability`, an agent is created with an empty
 capability set — always pass the ones it needs.)
@@ -149,9 +149,9 @@ pt agent create --name "Analyst" --public-description "…" --type-id 5 \
   --capability process_documents --capability documents --capability rag_documents
 pt agent get <id> | jq '.capabilities[].code'   # verify what actually landed
 ```
-Note: a group-scoped capability the group hasn't enabled is dropped by the server. Since
-CLI 1.4.1 the response carries a `warnings: ["capabilities not applied …"]` entry naming the
-dropped ids, so check that — and still use the `get` read-back to confirm what landed.
+Note: a group-scoped capability the group hasn't enabled is dropped by the server. The
+response carries a `warnings: ["capabilities not applied …"]` entry naming the dropped ids, so
+check that — and still use the `get` read-back to confirm what landed.
 
 ### Invite a member by email
 `pt chat invite-members` and `pt group invite` accept emails; for chat invites

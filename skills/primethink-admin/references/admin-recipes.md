@@ -16,7 +16,7 @@ AID=$(pt agent create --name "Assistant" --public-description "General assistant
 pt settings set default_agent "$AID" --scope group
 ```
 
-## Give an agent capabilities (CLI v1.4.1 — by code, resolved for you)
+## Give an agent capabilities (by code, resolved for you)
 ```bash
 pt capability resolve rag process_documents documents rag_documents   # preview code→id
 pt agent update <agent_id> \
@@ -25,9 +25,9 @@ pt agent update <agent_id> \
 pt agent get <agent_id> | jq '.capabilities[].code'   # ALWAYS verify what landed
 ```
 `--capability` is repeatable and resolves env-specific ids for you. A group-scoped
-capability the group hasn't enabled is dropped by the server, and since CLI 1.4.1 the
-response says so in `warnings: ["capabilities not applied …"]`. Still read back with
-`agent get`: `resolve` may skip some user-scoped internal codes.
+capability the group hasn't enabled is dropped by the server, and the response says so in
+`warnings: ["capabilities not applied …"]`. Still read back with `agent get`: `resolve` may
+skip some user-scoped internal codes.
 
 ## Invite a colleague to a chat by email
 ```bash
