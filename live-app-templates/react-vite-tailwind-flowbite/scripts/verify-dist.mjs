@@ -66,11 +66,17 @@ if (cssFiles.length) {
   const css = (await Promise.all(cssFiles.map(read))).join('\n');
   const undefined_ = new Set();
   const referenced = new RegExp(`\\b(?:${PREFIXES})-(?:${PT_MOCK_TOKENS.join('|')})\\b`, 'g');
+  // Tailwind emits `.bg-surface{…}` for a plain utility, but escapes the colon in a
+  // variant: `md:text-on-surface` ships as `.md\:text-on-surface`. A plain
+  // `css.includes('.' + utility)` therefore MISSES every variant form and fails the
+  // build on a correctly defined token — so match the utility where it is preceded by
+  // the selector dot OR by an escaped variant separator, and not glued to a longer name.
+  const emitted = (utility) =>
+    new RegExp(String.raw`[.\\:]${utility.replace(/[^\w-]/g, '\\$&')}(?![\w-])`).test(css);
+
   for (const name of textFiles.filter((n) => !n.endsWith('.css'))) {
     for (const [utility] of (await read(name)).matchAll(referenced)) {
-      // Tailwind emits `.bg-surface{…}` when the token is defined. These names are
-      // plain ASCII, so no selector escaping is needed.
-      if (!css.includes(`.${utility}`)) undefined_.add(utility);
+      if (!emitted(utility)) undefined_.add(utility);
     }
   }
   if (undefined_.size) {

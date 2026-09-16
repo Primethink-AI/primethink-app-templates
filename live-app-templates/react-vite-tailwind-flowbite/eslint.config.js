@@ -64,7 +64,7 @@ export default [
   },
   {
     // Build scripts, tests and config run in Node, not the browser.
-    files: ['scripts/**/*.mjs', 'tests/**/*.mjs', 'eslint-rules/**/*.js', 'vite.config.js', 'eslint.config.js'],
+    files: ['scripts/**/*.mjs', 'tests/**/*.mjs', 'eslint-rules/**/*.{js,mjs}', 'vite.config.js', 'eslint.config.js'],
     languageOptions: {
       globals: { ...globals.node }
     }

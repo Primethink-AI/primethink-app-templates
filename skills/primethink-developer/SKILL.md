@@ -738,7 +738,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 1. **No localStorage** — all state goes through `pt.add/edit/list` (chat database). Cross-device, persistent, AI-accessible.
 2. **Always spread on edit** — `pt.edit(id, { ...entity.data, newField: val })` or use merge mode `pt.edit(id, data, true)`.
 3. **Cache members** — call `pt.getChatMembers()` once at init, not in loops.
-4. **Dark mode** — every color class needs a `dark:` counterpart, and the theme must follow the host (class-based dark + `?theme=`/`pt:theme` bootstrap), never the OS `prefers-color-scheme`.
+4. **Dark mode** — every color must resolve in BOTH themes, and the theme must follow the host (class-based dark + `?theme=`/`pt:theme` bootstrap), never the OS `prefers-color-scheme`. Two ways to satisfy this: a `dark:` partner on every color class, OR semantic tokens declared in an `@theme inline` block whose variables are re-bound under `.dark` — with `@theme inline` the utilities need no `dark:` variants at all. Pick one per project and hold to it.
 5. **XSS prevention** — always `escapeHtml()` user content before innerHTML.
 6. **Server-side filtering** — use `filters:` in `pt.list()`, not client-side `.filter()`.
 7. **Debounce saves** — 1s debounce for frequent state updates.
@@ -768,9 +768,10 @@ live view — not by reading the code (the build passes on all of these).
   host `?theme=` param + `pt:theme` postMessage. The default must be "follow the host,"
   never `'system'`/`prefers-color-scheme`.
 - [ ] **The visual pass follows `references/design.md`** — clear hierarchy (weight and color
-  before size), a consistent spacing rhythm, a `dark:` counterpart on every color class, and
-  none of the anti-slop patterns (equal card grids where a table belongs, decorative metrics,
-  card-wrapped everything, permanent explainer panels).
+  before size), a consistent spacing rhythm, every color resolving in both themes (a `dark:`
+  partner on each color class, or `@theme inline` tokens re-bound under `.dark`, which need
+  no `dark:` variants), and none of the anti-slop patterns (equal card grids where a table
+  belongs, decorative metrics, card-wrapped everything, permanent explainer panels).
 - [ ] **Data survives a reload.** Create something, refresh — it is still there. If it
   vanished, state is in-memory (`useState` only) instead of ChatDB.
 - [ ] **The primary workflow works at phone, tablet, and laptop frame/input profiles.** The

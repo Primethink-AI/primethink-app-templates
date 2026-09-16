@@ -144,15 +144,27 @@ top-level files only and serves them under a chat-specific base path. Keep
 ## Build gates
 
 ```
-npm run lint     # ESLint over the whole project: no-undef, react-hooks,
-                 # and the PrimeThink rules in eslint-rules/primethink.js
-npm run build    # lint -> vite build -> verify-dist
+npm run lint       # ESLint over the whole project: no-undef, react-hooks,
+                   # and the PrimeThink rules in eslint-rules/primethink.js
+npm run build      # lint -> vite build -> verify-dist
+npm run test:rules # fixtures for the PrimeThink rules themselves
 ```
 
 `npm run lint` covers `tests/` and `scripts/` as well as `src/` — an undeclared
 reference in a test file is the same runtime crash as one in the app.
 
-**ESLint warnings are findings, not noise.** `react-hooks/exhaustive-deps` in
-particular is usually a state-lifetime bug rather than a style nit: a dependency
-listed that should not be there often means state is surviving a transition that
-should have reset it.
+**ESLint warnings are findings, not noise, and the build enforces that** — both
+`lint` and `build` run with `--max-warnings 0`, so a warning fails them exactly
+like an error. `react-hooks/exhaustive-deps` in particular is usually a
+state-lifetime bug rather than a style nit: a dependency listed that should not be
+there often means state is surviving a transition that should have reset it. Fix
+the dependency array; reach for a narrowly scoped `eslint-disable-next-line` with
+a written reason only when you have established the dependency genuinely does not
+belong.
+
+**The PrimeThink rules have their own fixtures** in
+`eslint-rules/primethink.test.mjs`. If you change a rule, add the case first. The
+`valid` blocks carry most of the weight: these rules replaced regexes that fired
+on correct code, and a linter that is wrong on correct code teaches you to reach
+for the suppression comment — which is when the true positives start getting
+waved through too.
