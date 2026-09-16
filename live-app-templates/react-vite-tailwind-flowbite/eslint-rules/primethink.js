@@ -145,8 +145,31 @@ const rules = {
     },
     create(context) {
       const { sourceCode, variableOf, isPtCall, directPtCall } = analysis(context);
-      const awaited = new Set();
+      /**
+       * Per binding: how many values were assigned to it, and how many of those were
+       * a `waitForMessageReceived()` result.
+       *
+       * Reporting is deferred to Program:exit because a read can be written above the
+       * assignment that gives it its shape (inside a closure, say). But source order is
+       * not execution order, so "the last assignment wins" would be a guess. A binding
+       * is only reported when EVERY value it ever holds is a response — one assignment
+       * in the ordinary `const res = await …` case. A binding that holds two different
+       * kinds of value has no single answer and stays silent.
+       */
+      const assigned = new Map();
       const pending = [];
+
+      const record = (variable, matches) => {
+        const entry = assigned.get(variable) ?? { total: 0, matching: 0 };
+        entry.total += 1;
+        if (matches) entry.matching += 1;
+        assigned.set(variable, entry);
+      };
+
+      const alwaysAResponse = (variable) => {
+        const entry = assigned.get(variable);
+        return Boolean(entry) && entry.total > 0 && entry.total === entry.matching;
+      };
 
       const report = (node, prop) =>
         context.report({
@@ -155,13 +178,14 @@ const rules = {
         });
 
       const track = (target, value, declarator) => {
-        if (!isPtCall(unwrapAwait(value), 'waitForMessageReceived')) return;
+        if (value === null || value === undefined) return; // `let res;` assigns nothing
+        const matches = isPtCall(unwrapAwait(value), 'waitForMessageReceived');
         if (target.type === 'Identifier') {
           const variable = declarator
             ? sourceCode.getDeclaredVariables(declarator)[0]
             : variableOf(target);
-          if (variable) awaited.add(variable);
-        } else if (target.type === 'ObjectPattern') {
+          if (variable) record(variable, matches);
+        } else if (matches && target.type === 'ObjectPattern') {
           // const { text } = await pt.waitForMessageReceived() — decidable on the spot.
           for (const p of target.properties) {
             const key = p.type === 'Property' && !p.computed ? (p.key.name ?? p.key.value) : undefined;
@@ -191,7 +215,7 @@ const rules = {
         },
         'Program:exit'() {
           for (const entry of pending) {
-            if (entry.variable && awaited.has(entry.variable)) report(entry.node, entry.prop);
+            if (entry.variable && alwaysAResponse(entry.variable)) report(entry.node, entry.prop);
           }
         }
       };
@@ -251,11 +275,31 @@ const rules = {
     },
     create(context) {
       const { sourceCode, variableOf, isPtCall, directPtCall } = analysis(context);
-      /** Bindings proven to hold a metadata-free pt.list() result. */
-      const bare = new Set();
-      /** Bindings we cannot pin to one shape — never reported. */
-      const ambiguous = new Set();
+      /**
+       * Per binding: how many values were assigned to it, and how many of those were
+       * provably a metadata-free `pt.list()` result.
+       *
+       * Reporting is deferred to Program:exit, because a read can be written above the
+       * assignment that gives it its shape. Source order is not execution order though,
+       * so neither "the last assignment wins" nor "any assignment counts" is sound: the
+       * first would report a read that ran while the binding still held something else,
+       * the second would report one that never sees a bare array at all. A binding is
+       * reported only when EVERY value it ever holds is a bare list result.
+       */
+      const assigned = new Map();
       const pending = [];
+
+      const record = (variable, matches) => {
+        const entry = assigned.get(variable) ?? { total: 0, matching: 0 };
+        entry.total += 1;
+        if (matches) entry.matching += 1;
+        assigned.set(variable, entry);
+      };
+
+      const alwaysBare = (variable) => {
+        const entry = assigned.get(variable);
+        return Boolean(entry) && entry.total > 0 && entry.total === entry.matching;
+      };
 
       const MESSAGE =
         'pt.list() returns a bare array here, so `.entities` is undefined. Use the result directly, ' +
@@ -335,16 +379,12 @@ const rules = {
 
       const track = (target, value, declarator) => {
         if (target.type !== 'Identifier') return;
+        if (value === null || value === undefined) return; // `let rows;` assigns nothing
         const variable = declarator ? sourceCode.getDeclaredVariables(declarator)[0] : variableOf(target);
         if (!variable) return;
         const init = unwrapAwait(value);
-        if (!init || !isPtCall(init, 'list')) {
-          // Reassigned to something we know nothing about: the shape is no longer ours.
-          if (bare.has(variable)) ambiguous.add(variable);
-          return;
-        }
-        if (returnsBareArray(init) === true) bare.add(variable);
-        else ambiguous.add(variable);
+        const matches = Boolean(init) && isPtCall(init, 'list') && returnsBareArray(init) === true;
+        record(variable, matches);
       };
 
       return {
@@ -370,8 +410,7 @@ const rules = {
         },
         'Program:exit'() {
           for (const entry of pending) {
-            if (!entry.variable) continue;
-            if (!bare.has(entry.variable) || ambiguous.has(entry.variable)) continue;
+            if (!entry.variable || !alwaysBare(entry.variable)) continue;
             context.report({ node: entry.node, message: MESSAGE });
           }
         }

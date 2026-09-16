@@ -42,7 +42,10 @@ ruleTester.run('response-message-field', rules['response-message-field'], {
     // A DIFFERENT binding that happens to share the name. Scope analysis, not text.
     'function f(res) { return res.text; } const res = await pt.waitForMessageReceived();',
     // A local `pt` is not the platform global.
-    'function f(pt) { const res = pt.waitForMessageReceived(); return res.text; }'
+    'function f(pt) { const res = pt.waitForMessageReceived(); return res.text; }',
+    // The read runs while `res` still holds the fetch result. Source order is not
+    // execution order, so a later pt assignment must not report an earlier read.
+    'let res = await api.fetch(); use(res.text); res = await pt.waitForMessageReceived();'
   ],
   invalid: [
     {
@@ -125,7 +128,12 @@ ruleTester.run('list-entities-without-metadata', rules['list-entities-without-me
     'const res = await api.fetch(); use(res.entities);',
     'use((await pt.list({ returnMetadata: true })).entities);',
     // A different binding of the same name.
-    'function f(res) { return res.entities; } const res = await pt.list({});'
+    'function f(res) { return res.entities; } const res = await pt.list({});',
+    // The read runs while `r` still holds the fetch result, which may well have
+    // `.entities`. A later bare pt.list() assignment must not report it.
+    'let r = await api.fetch(); use(r.entities); r = await pt.list({});',
+    // Two shapes over the binding's life: no single answer either way.
+    'let r = await pt.list({}); use(r.entities); r = await api.fetch();'
   ],
   invalid: [
     { code: 'const res = await pt.list({ entityNames: ["task"] }); use(res.entities);', errors: 1 },
