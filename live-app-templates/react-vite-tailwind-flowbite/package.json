@@ -8,11 +8,11 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "eslint src && vite build && node scripts/verify-dist.mjs && node scripts/pt-doctor.mjs",
+    "build": "eslint . --max-warnings 0 && vite build && node scripts/verify-dist.mjs",
     "preview": "vite preview",
     "verify:dist": "node scripts/verify-dist.mjs",
-    "lint": "eslint src",
-    "doctor": "node scripts/pt-doctor.mjs"
+    "lint": "eslint . --max-warnings 0",
+    "test:rules": "node --test \"eslint-rules/**/*.test.mjs\""
   },
   "dependencies": {
     "flowbite": "4.0.2",

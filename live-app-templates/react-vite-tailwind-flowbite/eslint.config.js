@@ -10,6 +10,7 @@
 import js from '@eslint/js';
 import globals from 'globals';
 import reactHooks from 'eslint-plugin-react-hooks';
+import primethink from './eslint-rules/primethink.js';
 
 export default [
   {
@@ -33,7 +34,8 @@ export default [
       }
     },
     plugins: {
-      'react-hooks': reactHooks
+      'react-hooks': reactHooks,
+      primethink
     },
     rules: {
       // The rule this whole setup is here for (see Issue #8 in the post-mortem).
@@ -45,12 +47,24 @@ export default [
       // React hooks correctness — these catch the stale-closure / conditional-hook
       // bugs that render as "works on my machine" and crash on a re-render.
       'react-hooks/rules-of-hooks': 'error',
-      'react-hooks/exhaustive-deps': 'warn'
+      // A hook-dependency warning is usually a state-lifetime bug, not a style nit:
+      // treat it as a finding and read it before shipping.
+      'react-hooks/exhaustive-deps': 'warn',
+
+      // PrimeThink platform rules. These replace the regex-based pt-doctor checks —
+      // see eslint-rules/primethink.js for why the AST version matters.
+      'primethink/response-message-field': 'error',
+      'primethink/on-entity-changed-arg-order': 'error',
+      'primethink/list-entities-without-metadata': 'error',
+      'primethink/no-flowbite-modal': 'error',
+      'primethink/no-web-storage': 'error',
+      'primethink/add-message-hidden': 'error',
+      'primethink/no-pt-write-in-state-updater': 'error'
     }
   },
   {
-    // Build scripts run in Node, not the browser.
-    files: ['scripts/**/*.mjs', 'vite.config.js', 'eslint.config.js'],
+    // Build scripts, tests and config run in Node, not the browser.
+    files: ['scripts/**/*.mjs', 'tests/**/*.mjs', 'eslint-rules/**/*.{js,mjs}', 'vite.config.js', 'eslint.config.js'],
     languageOptions: {
       globals: { ...globals.node }
     }

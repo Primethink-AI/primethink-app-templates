@@ -2,8 +2,8 @@
 
 Rules that hold for every app built from `react-vite-tailwind-flowbite`. Each one
 exists because it already broke a shipped app. `npm run build` enforces most of
-them (ESLint + `scripts/verify-dist.mjs` + `scripts/pt-doctor.mjs`); the rest are
-on you.
+them (ESLint, including the PrimeThink platform rules in `eslint-rules/primethink.js`,
+plus `scripts/verify-dist.mjs`); the rest are on you.
 
 ## 1. Preserve the theme bridge verbatim
 
@@ -46,12 +46,19 @@ an error anywhere — it is simply no style at all: a transparent, borderless bo
 `text-on-surface`, `text-on-surface-variant`, `border-outline`,
 `border-outline-variant`, `bg-primary-container`, `text-on-primary` and friends.
 Those are a **mock-screen convention that only exists inside App Studio's host
-shell**, which defines the backing `--pt-*` custom properties. Nothing defines
-them in a compiled app, so they generate zero CSS. `npm run doctor` fails the
-build if one appears in `src/`.
+shell**, which defines the backing `--pt-*` custom properties. Nothing defines them
+in a compiled app, so Tailwind emits zero CSS and the element renders transparent or
+borderless with no error anywhere. `verify-dist` fails the build if one of these
+utilities is referenced in the built output with no matching rule in the emitted CSS.
 
-The convention for compiled Live Apps is the standard Tailwind palette, with an
-explicit `dark:` variant on **every** color utility:
+Note the check is against the **emitted CSS**, not the markup: if you define these
+names yourself — see the token contract below — they compile to real rules and the
+build passes. The failure is "referenced but undefined", not "this name is banned".
+
+You have two ways to colour a compiled Live App.
+
+**Either** the standard Tailwind palette with an explicit `dark:` variant on every
+color utility:
 
 ```jsx
 <div className="bg-white dark:bg-gray-800 text-gray-900 dark:text-white
@@ -63,6 +70,28 @@ explicit `dark:` variant on **every** color utility:
 Dark mode is driven by the `dark` class the theme bridge (§1) puts on `<html>` —
 see `@custom-variant dark (&:where(.dark, .dark *))` in `src/index.css`. A color
 without a `dark:` partner just stays light when the host switches to dark.
+
+**Or** a variable-backed token contract with `@theme inline`, which is usually the
+better choice for an app with a real palette. Define the variables once per mode and
+map Tailwind colour names onto them:
+
+```css
+:root       { --app-surface: #FFFFFF; --app-ink: #1D1E2C; }
+:root.dark  { --app-surface: #1B222B; --app-ink: #ECF1F5; }
+
+@theme inline {
+  --color-surface: var(--app-surface);
+  --color-ink:     var(--app-ink);
+}
+```
+
+`bg-surface` and `text-ink` then flip on their own with the host theme, and the app
+needs **no `dark:` variants at all**. Note this is `@theme inline` — a plain `@theme`
+block with literal hex values produces a static colour that cannot flip, which forces
+`dark:` back onto every utility.
+
+Pick one and hold to it. Retrofitting a token contract across finished components is
+the expensive order; deciding it before the first component costs nothing.
 
 Tailwind v4 note: the focus-ring reset is `outline-hidden`, not v3's
 `outline-none`.
@@ -115,7 +144,27 @@ top-level files only and serves them under a chat-specific base path. Keep
 ## Build gates
 
 ```
-npm run lint     # ESLint (no-undef, react-hooks)
-npm run doctor   # known-misuse scan over src/ (see scripts/pt-doctor.mjs)
-npm run build    # lint -> vite build -> verify-dist -> doctor
+npm run lint       # ESLint over the whole project: no-undef, react-hooks,
+                   # and the PrimeThink rules in eslint-rules/primethink.js
+npm run build      # lint -> vite build -> verify-dist
+npm run test:rules # fixtures for the PrimeThink rules themselves
 ```
+
+`npm run lint` covers `tests/` and `scripts/` as well as `src/` — an undeclared
+reference in a test file is the same runtime crash as one in the app.
+
+**ESLint warnings are findings, not noise, and the build enforces that** — both
+`lint` and `build` run with `--max-warnings 0`, so a warning fails them exactly
+like an error. `react-hooks/exhaustive-deps` in particular is usually a
+state-lifetime bug rather than a style nit: a dependency listed that should not be
+there often means state is surviving a transition that should have reset it. Fix
+the dependency array; reach for a narrowly scoped `eslint-disable-next-line` with
+a written reason only when you have established the dependency genuinely does not
+belong.
+
+**The PrimeThink rules have their own fixtures** in
+`eslint-rules/primethink.test.mjs`. If you change a rule, add the case first. The
+`valid` blocks carry most of the weight: these rules replaced regexes that fired
+on correct code, and a linter that is wrong on correct code teaches you to reach
+for the suppression comment — which is when the true positives start getting
+waved through too.

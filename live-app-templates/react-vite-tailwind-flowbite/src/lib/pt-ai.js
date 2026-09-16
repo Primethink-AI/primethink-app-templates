@@ -65,11 +65,9 @@
  *   });
  */
 
-// pt-doctor-allow-file: add-message-not-hidden
-// This library passes the flag through a variable — `sendOpts = { hidden: ... }`
-// — which the doctor's argument-span heuristic cannot see; and startAiTask()
-// deliberately posts a VISIBLE fire-and-forget message so the user can watch the
-// task run in the chat.
+// Note on visibility: this library passes the flag through a variable
+// (`sendOpts = { hidden: ... }`), and startAiTask() deliberately posts a VISIBLE
+// fire-and-forget message so the user can watch the task run in the chat.
 
 const MODULE = '[pt-ai]';
 
