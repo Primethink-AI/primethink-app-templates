@@ -36,11 +36,25 @@ These come from the platform, not from taste. Breaking one is a bug, not a style
   `platform-known-issues.md` (KI-03) and `SKILL.md`.
 - **Class-based dark only** — `@custom-variant dark (&:where(.dark, .dark *))` (Tailwind 4).
   Never `prefers-color-scheme` for `dark:` variants.
-- **No font CDN, no new CDN anything.** Tailwind 4's default `--font-sans` is already a system
-  stack (`ui-sans-serif, system-ui, sans-serif, …`) and it is the right answer: it loads
-  instantly, renders natively on every device, and cannot hang on a filtered network. For
-  numeric columns use the system mono stack (`ui-monospace, SFMono-Regular, Menlo, Consolas,
-  monospace`) with `tabular-nums`. Personality does not come from a typeface here.
+- **Fonts — three rules, not one.**
+  - **Hard:** never fetch a font (or anything else) from a remote origin. It sits behind the
+    host's CSP, may run offline, and fails silently mid-layout. `verify-dist` fails the build
+    on one.
+  - **Default:** the system stack. Tailwind 4's `--font-sans` is already
+    `ui-sans-serif, system-ui, sans-serif, …`, it loads instantly and renders natively
+    everywhere. Reach for it unless you can say what a custom face buys. For numeric columns
+    use the system mono stack with `tabular-nums`.
+  - **Supported:** bundling via `@fontsource`, which emits flat `.woff2` files into `dist/` —
+    `verify-dist`'s own failure message recommends exactly this. Import the **subsets you
+    need** (`@fontsource/<face>/latin-400.css`), never the package root: the default pulls
+    every script, and each one becomes a separate deployed file uploaded one HTTP request at
+    a time. One app shipped 21 font files of 24, including Vietnamese, for a UK-English
+    audience.
+
+  Personality rarely comes from a typeface here — but "rarely" is not "never". A reading-
+  proficiency app choosing Lexend, or a word-discrimination app choosing Atkinson
+  Hyperlegible, is making a substantive accessibility decision, not a decorative one. Two
+  reports had to reason past the old wording to make that call.
 - **flowbite-react 0.12 flat exports only** — `TableCell`, `ToastToggle`, `TabItem`, never
   the dot-notation legacy API (`Table.Cell`), which renders `undefined`. And **never import
   anything `Modal*` from flowbite-react**: it crashes under React 19 — use the portal modal

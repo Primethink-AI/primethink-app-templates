@@ -41,7 +41,7 @@ find dist -mindepth 2 -type f -print
 
 The last `find` command should print nothing for the default PrimeThink template. Its build already runs `scripts/verify-dist.mjs` and fails for nested output, missing JS/CSS, or root-absolute asset URLs.
 
-Before building, rename the template's sample `ENTITY_NAME` so the app does not share Chat DB records with another app. Retain PrimeThink runtime, host-theme, merge-edit, query-bounding, and subscription-cleanup patterns while replacing the sample UI.
+The template ships **blank** — `App` returns `null`, and there is no sample UI, no sample entity and no `ENTITY_NAME` to rename. Choose entity names specific to this app (Chat DB is shared per chat, so a generic `item` will collide with a sibling app's), and keep the patterns the template does ship: the host-theme bridge, merge-edit, query bounding, and subscription cleanup.
 
 ### Deploy to `/documents/app/`
 
