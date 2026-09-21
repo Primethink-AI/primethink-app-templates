@@ -19,3 +19,32 @@
     background-color: var(--color-gray-900);
   }
 }
+
+/* Surface variables for the SHIPPED primitives (Table.jsx, Modal.jsx).
+   These exist so the primitives carry no palette and no `dark:` — which means they
+   work under BOTH colour strategies in AGENTS.md §4, instead of silently assuming
+   the standard-palette one.
+
+   Standard-palette project: leave these alone, they are the grey ramp.
+   @theme inline project: point them at your own tokens in one place, e.g.
+     :root { --pt-surface: var(--color-card); --pt-on-surface: var(--color-ink); }
+   and every shipped primitive follows. No per-call-site overrides, and no race
+   between a token utility and a palette utility. */
+@layer base {
+  :root {
+    --pt-surface:     var(--color-white);
+    --pt-on-surface:  var(--color-gray-900);
+    --pt-muted:       var(--color-gray-500);
+    --pt-hairline:    var(--color-gray-200);
+    --pt-hover:       var(--color-gray-50);
+    --pt-scrim:       rgb(17 24 39 / 0.5);
+  }
+  :root:where(.dark) {
+    --pt-surface:     var(--color-gray-800);
+    --pt-on-surface:  var(--color-white);
+    --pt-muted:       var(--color-gray-400);
+    --pt-hairline:    var(--color-gray-700);
+    --pt-hover:       rgb(255 255 255 / 0.04);
+    --pt-scrim:       rgb(0 0 0 / 0.7);
+  }
+}

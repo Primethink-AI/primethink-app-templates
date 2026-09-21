@@ -9,6 +9,12 @@
  *
  * Every primitive below spreads `...rest` onto its element, so anything valid on the
  * underlying tag works. Use them rather than hand-rolling `<td>` wrappers.
+ *
+ * Colour comes from the `--pt-*` variables in index.css, never from palette
+ * utilities and never with a `dark:` variant — so these work unchanged under both
+ * colour strategies in AGENTS.md §4. An @theme inline project repoints the six
+ * variables once; it does not override these components at every call site, and it
+ * cannot lose the silent alphabetical race between `bg-card` and `bg-white`.
  */
 
 const join = (...parts) => parts.filter(Boolean).join(' ');
@@ -17,7 +23,7 @@ export function Table({ className, ...rest }) {
   return (
     <div className="w-full overflow-x-auto">
       <table
-        className={join('w-full text-left text-sm text-gray-700 dark:text-gray-300', className)}
+        className={join('w-full text-left text-sm text-[var(--pt-on-surface)]', className)}
         {...rest}
       />
     </div>
@@ -28,8 +34,8 @@ export function THead({ className, ...rest }) {
   return (
     <thead
       className={join(
-        'text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400',
-        'border-b border-gray-200 dark:border-gray-700',
+        'text-xs uppercase tracking-wide text-[var(--pt-muted)]',
+        'border-b border-[var(--pt-hairline)]',
         className
       )}
       {...rest}
@@ -38,11 +44,11 @@ export function THead({ className, ...rest }) {
 }
 
 export function TBody({ className, ...rest }) {
-  return <tbody className={join('divide-y divide-gray-200 dark:divide-gray-700', className)} {...rest} />;
+  return <tbody className={join('divide-y divide-[var(--pt-hairline)]', className)} {...rest} />;
 }
 
 export function Tr({ className, ...rest }) {
-  return <tr className={join('hover:bg-gray-50 dark:hover:bg-gray-800/50', className)} {...rest} />;
+  return <tr className={join('hover:bg-[var(--pt-hover)]', className)} {...rest} />;
 }
 
 /** A header cell. `scope` defaults to `col`, which is what a screen reader needs. */

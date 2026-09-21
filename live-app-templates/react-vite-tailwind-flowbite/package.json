@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "eslint . --max-warnings 0 && vite build && node scripts/verify-dist.mjs",
-    "preview": "vite preview --port 4173 --strictPort",
+    "preview": "vite preview",
     "verify:dist": "node scripts/verify-dist.mjs",
     "lint": "eslint . --max-warnings 0",
     "test:rules": "node --test \"eslint-rules/**/*.test.mjs\"",
