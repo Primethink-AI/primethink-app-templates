@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-const PALETTE = /\b(?:[a-z-]+:)*(?:bg|text|border|ring|outline|fill|stroke|divide|shadow|from|via|to|accent|caret|decoration)-(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}\b/g;
+const PALETTE = /\b(?:[a-z-]+:)*(?:bg|text|border|ring|outline|fill|stroke|divide|shadow|from|via|to|accent|caret|decoration)-(?:(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}|white|black)\b/g;
 
 for (const file of ['Table.jsx', 'Modal.jsx']) {
   test(`${file} uses no palette colour and no dark: variant`, () => {
