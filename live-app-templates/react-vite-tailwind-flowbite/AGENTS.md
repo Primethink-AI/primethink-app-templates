@@ -283,8 +283,9 @@ array unless you pass `returnMetadata: true`, so `.entities` on the default shap
 `undefined`, which reads as "no rows" rather than as an error. Use `rowsOf()` instead of
 writing the guard again.
 
-**Both primitives carry no palette and no `dark:`.** Their colour comes from six
+**Both primitives carry no palette and no `dark:`.** Their colour comes from seven
 `--pt-*` variables in `index.css`, so they work unchanged under either strategy in §4.
+`tests/primitives.test.mjs` fails the suite if a palette colour or `dark:` creeps back in.
 An `@theme inline` project repoints the variables once:
 
 ```css

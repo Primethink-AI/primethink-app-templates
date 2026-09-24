@@ -25,11 +25,15 @@ import { defineConfig, devices } from '@playwright/test';
  * (4186, 4187, 4191, 4195), because the fix cannot be made from inside a generated
  * project.
  *
- * Derived rather than random so it is stable across runs — `reuseExistingServer`
- * still works for fast iteration, it just reuses YOUR server. Range 4200-4899
- * avoids Vite's 4173 and the 5173 dev port.
+ * Derived rather than random so it is stable across runs. Range 4200-4899 avoids
+ * Vite's 4173 and the 5173 dev port.
  *
- * Override with PT_PREVIEW_PORT if it ever collides with something else.
+ * A derived port lowers the odds of sharing a server; it cannot prove the server on
+ * it is ours — two projects can hash to the same port. So an already-running server
+ * is NOT reused by default: Playwright builds and serves this project every run, and
+ * if the port is taken it fails loudly instead of testing somebody else's build.
+ * Set PT_REUSE_PREVIEW=1 to reuse a preview you started yourself for fast iteration,
+ * and PT_PREVIEW_PORT to move off a port that collides.
  */
 const projectDir = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PT_PREVIEW_PORT)
@@ -57,7 +61,7 @@ export default defineConfig({
     // stays a plain human-facing command.
     command: `npm run build && npx vite preview --port ${PORT} --strictPort`,
     url: ORIGIN,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: !process.env.CI && process.env.PT_REUSE_PREVIEW === '1',
     timeout: 120_000
   }
 });

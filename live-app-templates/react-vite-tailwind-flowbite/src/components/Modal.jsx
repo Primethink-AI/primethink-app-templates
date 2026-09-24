@@ -75,7 +75,7 @@ export default function Modal({ open, onClose, title, children, footer }) {
               type="button"
               onClick={() => onCloseRef.current?.()}
               aria-label="Close"
-              className="-m-1 rounded p-1 text-xl leading-none text-[var(--pt-muted)] hover:bg-[var(--pt-hover)] hover:text-[var(--pt-on-surface)] focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+              className="-m-1 rounded p-1 text-xl leading-none text-[var(--pt-muted)] hover:bg-[var(--pt-hover)] hover:text-[var(--pt-on-surface)] focus:outline-hidden focus:ring-2 focus:ring-[var(--pt-focus)]"
             >
               &times;
             </button>

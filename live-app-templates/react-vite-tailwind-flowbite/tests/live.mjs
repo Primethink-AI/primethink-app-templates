@@ -61,29 +61,37 @@ check(await page.getByText('The app hit a rendering error').count() === 0,
 // Write, reload, read back. The check that means something: an app holding state in
 // useState passes every in-memory test and fails this one.
 const probe = `live-check-${Date.now()}`;
-const wrote = await page.evaluate(async (title) => {
-  try { return Boolean((await window.pt.add('live_check', { title }))?.entity?.id); }
-  catch (e) { return `error: ${e.message}`; }
-}, probe);
-check(wrote === true, `pt.add wrote a row (${wrote})`);
+try {
+  const wrote = await page.evaluate(async (title) => {
+    try { return Boolean((await window.pt.add('live_check', { title }))?.entity?.id); }
+    catch (e) { return `error: ${e.message}`; }
+  }, probe);
+  check(wrote === true, `pt.add wrote a row (${wrote})`);
 
-await page.reload({ waitUntil: 'networkidle' });
+  await page.reload({ waitUntil: 'networkidle' });
 
-const survived = await page.evaluate(async (title) => {
-  const rows = await window.pt.list({ entityNames: ['live_check'] });
-  return (Array.isArray(rows) ? rows : rows?.entities ?? []).some((r) => r.data?.title === title);
-}, probe);
-check(survived, 'the row survived a reload — data is in Chat DB, not in memory');
-
-// Leave the chat as we found it.
-await page.evaluate(async (title) => {
-  const rows = await window.pt.list({ entityNames: ['live_check'] });
-  for (const r of (Array.isArray(rows) ? rows : rows?.entities ?? [])) {
-    if (r.data?.title === title) await window.pt.delete(r.id);
+  const survived = await page.evaluate(async (title) => {
+    const rows = await window.pt.list({ entityNames: ['live_check'] });
+    return (Array.isArray(rows) ? rows : rows?.entities ?? []).some((r) => r.data?.title === title);
+  }, probe);
+  check(survived, 'the row survived a reload — data is in Chat DB, not in memory');
+} catch (e) {
+  failures.push(`probe aborted: ${e.message}`);
+} finally {
+  // Leave the chat as we found it, even if a step above threw — and always close the
+  // browser, even if cleanup fails.
+  try {
+    await page.evaluate(async (title) => {
+      const rows = await window.pt.list({ entityNames: ['live_check'] });
+      for (const r of (Array.isArray(rows) ? rows : rows?.entities ?? [])) {
+        if (r.data?.title === title) await window.pt.delete(r.id);
+      }
+    }, probe);
+  } catch (e) {
+    failures.push(`cleanup failed, a live_check row may remain: ${e.message}`);
   }
-}, probe);
-
-await browser.close();
+  await browser.close();
+}
 
 if (failures.length) {
   console.error(`\n${failures.length} failed:\n  - ${failures.join('\n  - ')}`);

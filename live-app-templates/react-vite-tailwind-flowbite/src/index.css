@@ -38,6 +38,7 @@
     --pt-hairline:    var(--color-gray-200);
     --pt-hover:       var(--color-gray-50);
     --pt-scrim:       rgb(17 24 39 / 0.5);
+    --pt-focus:       var(--color-blue-500);
   }
   :root:where(.dark) {
     --pt-surface:     var(--color-gray-800);
@@ -46,5 +47,6 @@
     --pt-hairline:    var(--color-gray-700);
     --pt-hover:       rgb(255 255 255 / 0.04);
     --pt-scrim:       rgb(0 0 0 / 0.7);
+    --pt-focus:       var(--color-blue-400);
   }
 }
