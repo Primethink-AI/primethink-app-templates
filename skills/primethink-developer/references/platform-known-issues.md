@@ -127,8 +127,12 @@ that depends on it; otherwise plan for manual import/export.
 
 An app asks the AI by posting a chat message and waiting for the reply. There is no synchronous
 call and no server-side job the app owns, so a long job dies with the tab if the app waits on
-it inline. **Workaround:** fire-and-forget — post a hidden message, record the `task_id` in
-ChatDB, and let the app pick the result up when the reply arrives (also on a later load).
+it inline. **Workaround:** fire-and-forget — post a hidden message and record the `task_id` in
+ChatDB. While the tab is open, `pt.onMessageReceived(taskId, cb)` (or
+`pt.waitForMessageReceived`) delivers the reply over the socket, hidden or not. Nothing
+recovers a reply by `task_id` after a reload — `getChatMessages` carries no `task_id` — so for
+a result that must survive the tab, have the prompt tell the agent to **write the result onto
+the entity**, and read it from there on any load.
 
 ### PC-07 — `pt.list` accepts at most 20 entity names per call
 **Severity:** MEDIUM
@@ -155,7 +159,8 @@ version), which is correct and desirable there. It was never generalised to user
 files, where it is data loss.
 
 **Workaround:** give every user-supplied file a unique name before upload —
-`` `${Date.now()}-${index}-${file.name}` `` is enough. Do not rely on the picker to vary it.
+`` `${crypto.randomUUID()}-${file.name}` ``. Do not rely on the picker to vary it, and do not
+build the name from a timestamp and an index: two batches in the same millisecond collide.
 
 ### PC-09 — `read_content_of_url` is blocked by most large retail and marketplace sites
 **Severity:** MEDIUM
@@ -169,13 +174,14 @@ nothing for the user to look at and nothing in the app to surface.
 cap the tool budget explicitly in the prompt, and write a failure reason into the entity so the
 UI can show one.
 
-### PC-10 — Hidden AI messages leave no trace anywhere the user or the app can see
+### PC-10 — Hidden AI messages leave no trace the user can see, or a later load can find
 **Severity:** MEDIUM
 
-`{ hidden: true }` hides the prompt **and** the reply. That is right for UX and it means a
-stalled fire-and-forget stage is invisible: no chat message, no error, and the entity simply
-never updates. One team diagnosed a stuck pipeline from a LangSmith trace, because nothing
-else existed to look at.
+`{ hidden: true }` hides the prompt **and** the reply from the chat. The tab that sent it can
+still observe the reply through `pt.onMessageReceived(taskId, …)` while it stays open (PC-06).
+Once that tab is gone, a stalled fire-and-forget stage is invisible: no chat message, no
+error, and the entity simply never updates. One team diagnosed a stuck pipeline from a
+LangSmith trace, because nothing else existed to look at.
 
 **Workaround:** treat the entity as the only observable. Write a `status` and a failure reason
 onto the row your UI reads, give every stage a timeout, and expect LangSmith to be the debugger
@@ -192,9 +198,11 @@ picture and starts seeing a filename. Nothing signals the switch.
 This matters for any app that re-attaches the same photos at several stages; it will work
 early in a conversation and quietly stop working later.
 
-**Workaround:** attach an image once, keep the document uuid, and reference the stored document
-rather than re-uploading. Downscale phone captures before upload (2.2 MB each × 8 exhausts a
-budget fast).
+**Workaround:** attach an image **once**, at the stage that needs to see it, and have that stage
+write what later stages need (a description, extracted fields) onto the entity, so they read
+text instead of the picture. There is no way to point a later message at an already-stored
+document: `addMessage` takes text or a `FormData` of files, and re-attaching means
+re-uploading. Downscale phone captures before upload (2.2 MB each × 8 exhausts a budget fast).
 
 ---
 

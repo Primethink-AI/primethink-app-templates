@@ -134,7 +134,7 @@ pt live-app new ./app --framework html --no-flowbite
 pt live-app new ./app --no-tailwind --no-flowbite
 ```
 
-Defaults are React + Tailwind + Flowbite. Flowbite requires Tailwind, so never pass `--no-tailwind` without `--no-flowbite`. The destination must not exist; do not delete or rename user files just to make generation succeed. For reproducible work, pin a known tag or commit with `--ref`; a custom public catalog can be selected with `--repo-url`. After generation, read the generated `README.md` before editing because the default React/Flowbite variant uses Vite while the other default variants are no-build. Rename the sample entity before deployment. The command never runs `npm install` or generated code.
+Defaults are React + Tailwind + Flowbite. Flowbite requires Tailwind, so never pass `--no-tailwind` without `--no-flowbite`. The destination must not exist; do not delete or rename user files just to make generation succeed. For reproducible work, pin a known tag or commit with `--ref`; a custom public catalog can be selected with `--repo-url`. After generation, read the generated `README.md` before editing because the default React/Flowbite variant uses Vite while the other default variants are no-build. The templates ship no sample entity; name every entity for this app (ChatDB is shared per chat, so a generic `item` collides with a sibling app's). The command never runs `npm install` or generated code.
 
 ## MCP server
 

@@ -45,11 +45,15 @@ These come from the platform, not from taste. Breaking one is a bug, not a style
     everywhere. Reach for it unless you can say what a custom face buys. For numeric columns
     use the system mono stack with `tabular-nums`.
   - **Supported:** bundling via `@fontsource`, which emits flat `.woff2` files into `dist/` —
-    `verify-dist`'s own failure message recommends exactly this. Import the **subsets you
-    need** (`@fontsource/<face>/latin-400.css`), never the package root: the default pulls
-    every script, and each one becomes a separate deployed file uploaded one HTTP request at
-    a time. One app shipped 21 font files of 24, including Vietnamese, for a UK-English
-    audience.
+    `verify-dist`'s own failure message recommends exactly this. Import the **subsets and
+    weights you need** (`@fontsource/<face>/latin-400.css`), not the package root. The cost
+    is at build and deploy time, not in the browser: the root CSS references every script's
+    files, so Vite emits all of them into `dist/`, and each one is deployed as a separate
+    file, uploaded one HTTP request at a time. (A browser still downloads only the subsets
+    a page needs, via `unicode-range`.) One app shipped 21 font files of 24, including
+    Vietnamese, for a UK-English audience. If the family has a variable build, prefer
+    `@fontsource-variable/<face>` with the same subset imports, and use one file instead
+    of one per weight.
 
   Personality rarely comes from a typeface here — but "rarely" is not "never". A reading-
   proficiency app choosing Lexend, or a word-discrimination app choosing Atkinson

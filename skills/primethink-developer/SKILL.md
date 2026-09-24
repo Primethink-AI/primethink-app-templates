@@ -520,11 +520,11 @@ const hiddenResult = await pt.addMessage(prompt, { hidden: true });
 // existing one instead of adding a second (PC-08). iOS names every capture image.jpg,
 // so ALWAYS make user-supplied names unique before uploading.
 const formData = new FormData();
-formData.append('files', file, `${Date.now()}-${index}-${file.name}`);
+formData.append('files', file, `${crypto.randomUUID()}-${file.name}`);
 const fileResult = await pt.addMessage(formData, 'Process this file', { hidden: true });
 // fileResult.attachments = [{ document: { id, uuid, name }, ... }], plus files_count.
-// Keep the uuid: it is how you display the file later, and re-referencing a stored
-// document is cheaper than re-attaching it (PC-11 — images are vision blocks, budgeted).
+// Keep the uuid: it is how you display the file later. It does NOT let a later message
+// show the model the image again — attach once and store what later stages need (PC-11).
 const { uuid } = fileResult.attachments[0].document;
 
 // Display a stored image or file
@@ -746,12 +746,37 @@ const DEMO_DATA = {
 
 async function ensureDemoData() {
     for (const [entityName, rows] of Object.entries(DEMO_DATA)) {
+        if (rows.length === 0) continue;        // batchAdd throws on an empty array
         const existing = await pt.list({ entityNames: [entityName], limit: 1 });
         // rowsOf() ships in the compiled template's src/lib/pt-list.js; inline the
         // Array.isArray guard only in a dynamic app that has no build step.
-        if (rowsOf(existing).length === 0) {
-            await pt.batchAdd(entityName, rows);   // (entityName, dataArray) — NOT one array
+        if (rowsOf(existing).length > 0) continue;
+        const seeded = rows.map((row, i) => ({ ...row, seed_key: `${entityName}:${i}` }));
+        await pt.batchAdd(entityName, seeded);   // (entityName, dataArray) — NOT one array
+        await dropDuplicateSeeds(entityName);
+    }
+}
+
+// ChatDB has no unique key, upsert or lock, so two members opening the app for the first
+// time at once can both see an empty entity and both seed. Converge instead: keep the
+// oldest row per seed_key and delete the rest. The oldest copy is never deleted, because
+// no instance can see a row older than it, so every instance agrees on it.
+async function dropDuplicateSeeds(entityName) {
+    const all = rowsOf(await pt.list({ entityNames: [entityName] }));  // no limit: all rows
+    const oldest = new Map();
+    for (const row of all) {
+        const key = row.data?.seed_key;
+        if (!key) continue;
+        const kept = oldest.get(key);
+        if (!kept || row.created_at < kept.created_at
+            || (row.created_at === kept.created_at && String(row.id) < String(kept.id))) {
+            oldest.set(key, row);
         }
+    }
+    const extra = all.filter((r) => r.data?.seed_key && oldest.get(r.data.seed_key) !== r);
+    if (extra.length > 0) {
+        // Another instance may be deleting the same rows; losing that race is fine.
+        await pt.batchDelete(extra.map((r) => r.id)).catch(() => {});
     }
 }
 // init: await ensureDemoData(); then load everything with pt.list per entity.
