@@ -752,8 +752,22 @@ async function ensureDemoData() {
         // Array.isArray guard only in a dynamic app that has no build step.
         if (rowsOf(existing).length > 0) continue;
         const seeded = rows.map((row, i) => ({ ...row, seed_key: `${entityName}:${i}` }));
-        await pt.batchAdd(entityName, seeded);   // (entityName, dataArray) — NOT one array
+        await addAll(entityName, seeded);
         await dropDuplicateSeeds(entityName);
+    }
+}
+
+// batchAdd resolves even when some rows fail: it returns one { success, index, error }
+// per row. A half-seeded entity is no longer empty, so the next load would skip it and
+// the missing rows would stay missing. Retry the failed rows once, then fail loudly.
+async function addAll(entityName, rows) {
+    let pending = rows;
+    for (let attempt = 0; attempt < 2 && pending.length > 0; attempt += 1) {
+        const results = await pt.batchAdd(entityName, pending);   // (entityName, dataArray)
+        pending = results.filter((r) => !r.success).map((r) => pending[r.index]);
+    }
+    if (pending.length > 0) {
+        throw new Error(`seeding ${entityName}: ${pending.length} row(s) could not be written`);
     }
 }
 
@@ -774,10 +788,12 @@ async function dropDuplicateSeeds(entityName) {
         }
     }
     const extra = all.filter((r) => r.data?.seed_key && oldest.get(r.data.seed_key) !== r);
-    if (extra.length > 0) {
-        // Another instance may be deleting the same rows; losing that race is fine.
-        await pt.batchDelete(extra.map((r) => r.id)).catch(() => {});
-    }
+    if (extra.length === 0) return;
+    // Like batchAdd, batchDelete reports per id. "Entity not found" means another instance
+    // deleted it first, which is fine; anything else is a real failure.
+    const results = await pt.batchDelete(extra.map((r) => r.id));
+    const failed = results.filter((r) => !r.success && r.error?.message !== 'Entity not found');
+    if (failed.length > 0) console.warn(`seed cleanup for ${entityName}: ${failed.length} duplicate(s) left`, failed);
 }
 // init: await ensureDemoData(); then load everything with pt.list per entity.
 ```
