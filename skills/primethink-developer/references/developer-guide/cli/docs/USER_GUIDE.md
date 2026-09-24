@@ -776,8 +776,8 @@ Defaults are `--framework react --tailwind --flowbite`. Flowbite depends on Tail
 After generation:
 
 1. Read the generated `README.md`; build and deployment steps differ by template.
-2. Rename the sample Chat DB entity so it is unique to your app.
-3. Replace the sample CRUD interface while retaining the PrimeThink runtime, theme, persistence, and real-time patterns.
+2. Name every Chat DB entity for your app. The templates ship none, and a generic name such as `item` collides with a sibling app in the same chat.
+3. Build the interface on the blank starter, keeping the PrimeThink wiring it ships: the runtime, the host-theme bridge, and the deployment configuration.
 4. Build if required, then upload the files described by the template README.
 
 The default Flowbite React starter is a Vite project and requires a local `npm install` and build. The other default starters are no-build, one-file HTML applications. The CLI itself intentionally runs neither package installation nor generated code.

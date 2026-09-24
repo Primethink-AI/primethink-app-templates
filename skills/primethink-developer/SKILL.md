@@ -91,10 +91,16 @@ libraries/                                # Copy-into dynamic/no-build apps
 
 Always read the relevant reference file — it contains the full API signatures, patterns, and examples you need.
 
-**MANDATORY: before writing any code that calls `pt.*` methods, read the relevant reference
-file.** Do not guess API signatures, return types, or option names — the reference files are
-the source of truth. In the last full post-mortem, five of nine shipped bugs were calls the
-agent invented while the correct signature sat unread in this directory.
+**Do not guess API signatures, return types, or option names.** In the last full post-mortem,
+five of nine shipped bugs were calls the agent invented while the correct signature sat unread
+in this directory.
+
+Scoped, so it is followed rather than skipped wholesale: the inline `pt` quick reference below
+covers `add` / `get` / `list` / `edit` / `delete` / `batch*` / `addMessage` /
+`waitForMessageReceived` / `onEntityChanged`, and a CRUD-plus-subscription app needs nothing
+else. **Read the reference file before using** documents and media, collections, mentions,
+notifications, `callToolDirect`, or anything not named above — and read the *source*
+(`primethink.js`) rather than prose if the two ever disagree.
 
 ## Reusable Libraries (check before writing code)
 
@@ -372,6 +378,17 @@ build  →  publish  →  test the REAL runtime  →  fix  →  re-publish
  npm run build   pt live-app publish/test    ui-testing/
 ```
 
+**Which test proves what** — three things exist and they are not alternatives:
+
+| | proves | does not prove |
+|---|---|---|
+| `npm test` (node, pure `src/lib/`) | your domain rules | anything about the platform |
+| `npm run test:ui` (Playwright on `vite preview`) | render, theme bridge, layout, focus, screenshots | persistence, `pt`, anything needing a host |
+| `tests/live.mjs` against `/api/v1/live/<CHAT_UUID>` | the real runtime: `pt` present, data surviving a reload, row granularity | — |
+
+A persistence claim requires the third. The template ships all three; run the third before
+saying an app works.
+
 **A local `vite preview` is not a test.** It has no `window.pt`, so persistence, `pt.add` /
 `pt.list` and real-time sync cannot be exercised there at all — and the missing runtime tempts
 you into writing defensive guards against an absence that only exists in your test harness.
@@ -435,6 +452,10 @@ const item = await pt.get(entityId);
 const items = await pt.list({ entityNames: ['task'], filters: { completed: false }, limit: 50 });
 // items = [{ id, entity_name, data, created_at, ... }, ...]
 
+// There is NO orderBy/sort parameter — the action forwards only entityNames, filters,
+// limit, offset, page, pageSize. Sort client-side, and never assume row order: a streak
+// or "latest" calculation that trusts it is wrong.
+
 // Pass returnMetadata: true (and only then) to get the envelope with count + pagination
 const page = await pt.list({ entityNames: ['task'], limit: 50, returnMetadata: true });
 // page = { entities: [...], count: 42, pagination: { limit, offset, has_more } }
@@ -494,10 +515,20 @@ const result = await pt.addMessage('Analyze this data');
 // App-driven AI call: { hidden: true } keeps the prompt OUT of the chat transcript
 const hiddenResult = await pt.addMessage(prompt, { hidden: true });
 
-// Upload files with a message — the options object always stays LAST
+// Upload files with a message — the options object always stays LAST.
+// Documents are keyed by NAME WITHIN THEIR FOLDER: a same-named upload versions the
+// existing one instead of adding a second (PC-08). iOS names every capture image.jpg,
+// so ALWAYS make user-supplied names unique before uploading.
 const formData = new FormData();
-formData.append('files', file);
+formData.append('files', file, `${crypto.randomUUID()}-${file.name}`);
 const fileResult = await pt.addMessage(formData, 'Process this file', { hidden: true });
+// fileResult.attachments = [{ document: { id, uuid, name }, ... }], plus files_count.
+// Keep the uuid: it is how you display the file later. It does NOT let a later message
+// show the model the image again — attach once and store what later stages need (PC-11).
+const { uuid } = fileResult.attachments[0].document;
+
+// Display a stored image or file
+const src = pt.documentUrl(uuid);        // authenticated stream URL for <img src> / <a href>
 
 // Wait for AI response (preferred over polling)
 const response = await pt.waitForMessageReceived(result.task_id, { timeout: 120000 });
@@ -675,9 +706,16 @@ Verify by forcing both query themes against the opposite OS preference and dispa
 Treat every live-app project as something another agent (or you, next week,
 with no conversation history) must pick up cold.
 
-- **`AGENTS.md` at the project root** (e.g. `/sandbox/lido-app/AGENTS.md`) —
+- **`PROJECT.md` at the project root** (e.g. `/sandbox/lido-app/PROJECT.md`) —
   the project's own CLAUDE.md-style map. Create it right after scaffolding and
-  keep it current as the app evolves:
+  keep it current as the app evolves.
+  **Not `AGENTS.md`:** the compiled template already ships an `AGENTS.md` there
+  holding its ten invariants, each of which exists because it broke a shipped app.
+  Writing your map to that filename destroys them silently and permanently — it
+  has happened twice, the second time four days after a report warned against it.
+  If you find a project whose `AGENTS.md` is a project map rather than the
+  template's invariants, that is what happened; recover them from a sibling
+  project's copy. Contents of your `PROJECT.md`:
   - what the app does (features, views/routes, admin vs user areas)
   - file structure (which file owns what)
   - ChatDB entity names WITH their data shapes
@@ -686,8 +724,8 @@ with no conversation history) must pick up cold.
   - conventions and decisions (theme, libraries copied into `app/lib/`, ...)
 - **`/chat/memo.md`** — the chat-level pointer that survives even when the
   sandbox is not provisioned: project path, stack, entity list, open items.
-- **Returning to an existing project: read `AGENTS.md` FIRST**, before
-  re-reading sources. Trust it for what it covers; verify only what you are
+- **Returning to an existing project: read `PROJECT.md` and the template's
+  `AGENTS.md` FIRST**, before re-reading sources. Trust it for what it covers; verify only what you are
   about to change. Update both files whenever features, structure, or entities
   change — a stale map is worse than none.
 
@@ -708,12 +746,54 @@ const DEMO_DATA = {
 
 async function ensureDemoData() {
     for (const [entityName, rows] of Object.entries(DEMO_DATA)) {
+        if (rows.length === 0) continue;        // batchAdd throws on an empty array
         const existing = await pt.list({ entityNames: [entityName], limit: 1 });
-        const count = (existing?.entities ?? existing ?? []).length;  // tolerates both list shapes
-        if (count === 0) {
-            await pt.batchAdd(rows.map(data => ({ entity_name: entityName, data })));
+        // rowsOf() ships in the compiled template's src/lib/pt-list.js; inline the
+        // Array.isArray guard only in a dynamic app that has no build step.
+        if (rowsOf(existing).length > 0) continue;
+        const seeded = rows.map((row, i) => ({ ...row, seed_key: `${entityName}:${i}` }));
+        await addAll(entityName, seeded);
+        await dropDuplicateSeeds(entityName);
+    }
+}
+
+// batchAdd resolves even when some rows fail: it returns one { success, index, error }
+// per row. A half-seeded entity is no longer empty, so the next load would skip it and
+// the missing rows would stay missing. Retry the failed rows once, then fail loudly.
+async function addAll(entityName, rows) {
+    let pending = rows;
+    for (let attempt = 0; attempt < 2 && pending.length > 0; attempt += 1) {
+        const results = await pt.batchAdd(entityName, pending);   // (entityName, dataArray)
+        pending = results.filter((r) => !r.success).map((r) => pending[r.index]);
+    }
+    if (pending.length > 0) {
+        throw new Error(`seeding ${entityName}: ${pending.length} row(s) could not be written`);
+    }
+}
+
+// ChatDB has no unique key, upsert or lock, so two members opening the app for the first
+// time at once can both see an empty entity and both seed. Converge instead: keep the
+// oldest row per seed_key and delete the rest. The oldest copy is never deleted, because
+// no instance can see a row older than it, so every instance agrees on it.
+async function dropDuplicateSeeds(entityName) {
+    const all = rowsOf(await pt.list({ entityNames: [entityName] }));  // no limit: all rows
+    const oldest = new Map();
+    for (const row of all) {
+        const key = row.data?.seed_key;
+        if (!key) continue;
+        const kept = oldest.get(key);
+        if (!kept || row.created_at < kept.created_at
+            || (row.created_at === kept.created_at && String(row.id) < String(kept.id))) {
+            oldest.set(key, row);
         }
     }
+    const extra = all.filter((r) => r.data?.seed_key && oldest.get(r.data.seed_key) !== r);
+    if (extra.length === 0) return;
+    // Like batchAdd, batchDelete reports per id. "Entity not found" means another instance
+    // deleted it first, which is fine; anything else is a real failure.
+    const results = await pt.batchDelete(extra.map((r) => r.id));
+    const failed = results.filter((r) => !r.success && r.error?.message !== 'Entity not found');
+    if (failed.length > 0) console.warn(`seed cleanup for ${entityName}: ${failed.length} duplicate(s) left`, failed);
 }
 // init: await ensureDemoData(); then load everything with pt.list per entity.
 ```
