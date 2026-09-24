@@ -77,12 +77,20 @@ export default [
     }
   },
   {
-    // Playwright specs run in Node, but the bodies passed to page.evaluate() are
-    // serialised and run in the BROWSER, so they legitimately reference document,
-    // window and friends. Both sets apply.
-    files: ['tests/**/*.spec.mjs'],
+    // EVERY file under tests/, not just *.spec.mjs. A Playwright helper is serialised
+    // and run in the BROWSER too (page.evaluate bodies, addInitScript), so it
+    // legitimately references document and window. Scoped to *.spec.mjs this was a
+    // hard build failure under --max-warnings 0, and two projects each fixed it by
+    // hand — one of them three times, as it added a helper per test kind.
+    files: ['tests/**/*.mjs'],
     languageOptions: {
       globals: { ...globals.node, ...globals.browser }
+    },
+    rules: {
+      // Intl formats money with a narrow no-break space: `12,50 €`. Asserting that
+      // exact string is correct, and trips no-irregular-whitespace — which under
+      // --max-warnings 0 fails the build for any app formatting a European currency.
+      'no-irregular-whitespace': ['error', { skipStrings: true, skipTemplates: true }]
     }
   }
 ];

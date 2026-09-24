@@ -36,7 +36,12 @@ Persist through the chat database: `pt.add()`, `pt.edit()`, `pt.list()`. Web
 storage is per-browser, invisible to other users and to the AI, and can be
 unavailable in the sandboxed iframe.
 
-## 4. Standard Tailwind palette — every color class carries a `dark:` variant
+**One exception, in tests only:** `tests/pt-stub.mjs` persists to `sessionStorage` so a
+browser test can assert `add -> reload -> re-assert`. That is test scaffolding running
+against `vite preview`, never shipped app code — the rule above is about where your
+app's data lives, and the answer there is always ChatDB.
+
+## 4. Colour — pick one of two strategies and hold to it
 
 A compiled Live App ships its own CSS, and **Tailwind v4 silently emits nothing
 for a utility it does not recognise**. An invented color class is therefore not
@@ -95,6 +100,40 @@ the expensive order; deciding it before the first component costs nothing.
 
 Tailwind v4 note: the focus-ring reset is `outline-hidden`, not v3's
 `outline-none`.
+
+### Three ways a colour silently does nothing
+
+All three pass lint, build and `verify-dist`, and are visible only in a screenshot.
+
+**A token and a palette utility on the same element race, and alphabetical order
+wins.** Tailwind emits colour utilities alphabetically, so `bg-card` beats `bg-white`
+(`c` < `w`) and `bg-slate` would lose to it. Nothing warns you. Do not put both on one
+element and rely on the order — remove the palette class. The shipped primitives carry
+no palette at all for exactly this reason (see §9).
+
+**A token can shadow a real Tailwind utility.** Name a colour `right` and `@theme
+inline` generates `text-right` and `bg-right` — which already mean `text-align: right`
+and `background-position: right`. One app's alignment broke and its answers rendered
+green. Never name a token after a Tailwind keyword: `right`, `left`, `center`, `top`,
+`bottom`, `none`, `auto`, `full`. Prefix if in doubt (`--color-mark-right`).
+
+**An undefined token emits nothing.** Covered above — this is the inverse case, and
+`verify-dist` does catch it for the App Studio mock-screen names.
+
+### Fonts
+
+Never fetch one from a remote origin; `verify-dist` fails the build on it. The system
+stack is the default and usually right. If a face earns its place — a reading app
+choosing Lexend, a word-discrimination app choosing Atkinson Hyperlegible — bundle it
+with `@fontsource` and **import the subsets you need**:
+
+```js
+import '@fontsource/lexend/latin-400.css';   // not '@fontsource/lexend'
+```
+
+The package root pulls every script. One app shipped 21 font files out of 24, including
+Vietnamese, for a UK-English audience — and each file is a separate upload at publish
+time.
 
 ## 5. The AI-from-app pattern
 
@@ -186,6 +225,23 @@ npm run test:ui -- --update-snapshots
 Playwright is a devDependency of this template. Do not resolve it by path into another
 project's `node_modules`; that has happened, and it breaks for everyone else.
 
+**The first `npm run test:ui` run FAILS by design.** Playwright writes the missing
+snapshot baselines and reports the run as failed. Review the images, commit them, run
+again.
+
+**`npm run test:ui` cannot prove persistence.** `vite preview` has no `window.pt`. For
+screens that need one, `tests/pt-stub.mjs` is the canonical stub — see §9. For proof,
+`tests/live.mjs` loads the app the way PrimeThink serves it, against a real chat:
+
+```
+PT_API_KEY=... node tests/live.mjs <chat-uuid>
+```
+
+It asserts `pt` is injected and real, that the app renders, and that a written row
+**survives a reload** — the check an app holding state in `useState` fails and every
+in-memory test passes. Three separate apps shipped having never once met a real `pt`.
+Run it before saying an app works.
+
 Reach for a screenshot assertion (`toHaveScreenshot`) for anything whose failure is
 visual. Two of the reported bugs were visible **only** in a screenshot — a paint effect
 applied to an inline element that had no box, and a white band around a dark-mode app —
@@ -209,6 +265,13 @@ before you start. `npm run build` runs it first and refuses to build on errors.
 
 ## 9. Use the primitives the template ships
 
+`tests/pt-stub.mjs` — the canonical browser `pt` stub. Use it for rendering and flow;
+never assert a platform semantic through it. It throws on any method it does not
+implement rather than returning `undefined`, and persists to `sessionStorage` so
+`add -> reload -> re-assert` is testable. Four apps each wrote their own divergent stub
+before this existed, which is precisely the "a stub encodes your belief about the API"
+problem — one shipped stub is the answer to that, not zero.
+
 `src/components/Table.jsx` — `Table`, `THead`, `TBody`, `Tr`, `Th`, `Td`. Every one
 spreads `...rest` onto its element. A hand-rolled `<td className={…}>{children}</td>`
 wrapper looks complete and silently drops `colSpan`, `rowSpan`, `scope`, `headers` and
@@ -219,6 +282,18 @@ spanning the table: it renders, it looks nearly right, and no gate objects.
 array unless you pass `returnMetadata: true`, so `.entities` on the default shape is
 `undefined`, which reads as "no rows" rather than as an error. Use `rowsOf()` instead of
 writing the guard again.
+
+**Both primitives carry no palette and no `dark:`.** Their colour comes from seven
+`--pt-*` variables in `index.css`, so they work unchanged under either strategy in §4.
+`tests/primitives.test.mjs` fails the suite if a palette colour or `dark:` creeps back in.
+An `@theme inline` project repoints the variables once:
+
+```css
+:root { --pt-surface: var(--color-card); --pt-on-surface: var(--color-ink); }
+```
+
+rather than overriding the components at every call site — which is what the previous
+version forced, and which loses the alphabetical race described in §4.
 
 These are deliberately the only platform helpers here. `libraries/` in the skill is
 scoped to dynamic, no-build apps; for a compiled app, domain logic belongs in pure

@@ -16,6 +16,8 @@
 
 import { test, expect } from '@playwright/test';
 
+import { installPtStub } from './pt-stub.mjs';
+
 /** The host drives the theme; the bootstrap in index.html applies the class. */
 const themes = ['light', 'dark'];
 
@@ -52,3 +54,45 @@ test('the app renders without a boundary error', async ({ page }) => {
 //   await page.goto('/?theme=dark');
 //   await expect(page).toHaveScreenshot('board-dark.png', { fullPage: true });
 // });
+
+
+// ---------------------------------------------------------------------------
+// The canonical browser stub. Delete these once your own screens use it — but
+// keep the reload case: it is the one an in-memory stub passes and a real bug
+// (state held in useState) fails.
+// ---------------------------------------------------------------------------
+
+test.describe('pt stub', () => {
+  test('seeds rows a screen can render', async ({ page }) => {
+    await installPtStub(page, { seed: { task: [{ title: 'Seeded' }] } });
+    await page.goto('/');
+
+    const rows = await page.evaluate(() => window.pt.list({ entityNames: ['task'] }));
+    expect(rows).toHaveLength(1);
+    expect(rows[0].data.title).toBe('Seeded');
+    // A bare array, like the real pt — not { entities: [...] }.
+    expect(Array.isArray(rows)).toBe(true);
+  });
+
+  test('a written row survives a reload', async ({ page }) => {
+    await installPtStub(page);
+    await page.goto('/');
+
+    await page.evaluate(() => window.pt.add('task', { title: 'Persisted' }));
+    await page.reload();
+
+    const titles = await page.evaluate(async () =>
+      (await window.pt.list({ entityNames: ['task'] })).map((r) => r.data.title));
+    expect(titles).toContain('Persisted');
+  });
+
+  test('an unimplemented method throws instead of returning undefined', async ({ page }) => {
+    await installPtStub(page);
+    await page.goto('/');
+
+    const message = await page.evaluate(() => {
+      try { window.pt.addMessage('hi'); return null; } catch (e) { return e.message; }
+    });
+    expect(message).toContain('not implemented by the browser test stub');
+  });
+});
