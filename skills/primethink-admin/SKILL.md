@@ -3,9 +3,9 @@ name: primethink-admin
 description: >-
   Administer a PrimeThink account with the `pt` CLI — manage groups, users and
   roles, chat workspaces, chats, tasks (including catalog tasks), agents and
-  capabilities, collections, group/user settings and provider API keys, tags,
-  scheduled jobs, and semantic search. Use whenever the user asks to do
-  PrimeThink administration: configure a group, set a provider key
+  capabilities, collections (including shared DB Collections), group/user
+  settings and provider API keys, tags, scheduled jobs, and semantic search.
+  Use whenever the user asks to do PrimeThink administration: configure a group, set a provider key
   (ANTHROPIC_API_KEY/OPENAI_API_KEY/…), set the group default agent, create or
   update agents/capabilities, invite or remove members, organise workspaces,
   publish or catalog tasks, run `pt group`/`pt settings`/`pt user`/`pt workspace`/
@@ -86,6 +86,7 @@ JSON is the default.
 | Any command's exact flags | [references/command-reference.md](references/command-reference.md) |
 | A multi-step admin workflow (setup, rollout, cleanup) | [references/admin-recipes.md](references/admin-recipes.md) |
 | Understanding roles, share types, task/agent/capability types | [references/concepts.md](references/concepts.md) |
+| Sharing structured data across chats (DB Collections) | [concepts.md](references/concepts.md#db-collections-shared-data) + [the setup recipe](references/admin-recipes.md#set-up-a-shared-db-collection-data-shared-across-chats) |
 | Gotchas, CLI/MCP gaps, and workarounds | [references/known-gaps.md](references/known-gaps.md) |
 | Building the workspace / group activity collectors | [references/collectors.md](references/collectors.md) |
 
@@ -103,7 +104,7 @@ JSON is the default.
 | Agents | `pt agent` | list/get/create/update/delete; types; capabilities via config; avatar; RAG collections |
 | Capabilities | `pt capability` | list/create/update/archive/duplicate; **resolve** codes→ids |
 | Evaluation | `pt eval` | test/QA a task: plan → run → results, simulations |
-| Collections | `pt collection` | list/create/update/reindex; documents |
+| Collections | `pt collection` | list/create/update/reindex; documents; `--type db` for shared DB Collections |
 | Scheduled jobs | `pt scheduled-job` | list/create/update/set-status/delete (per chat) |
 | Tags | `pt tag` | list/create/assign (per model type) |
 | Search | `pt search` | documents/chat/collection/messages/images |

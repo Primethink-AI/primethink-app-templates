@@ -68,6 +68,34 @@ Containers for documents + semantic search. `indexed` controls vectorisation
 (default false); setting `indexed: true` triggers a reindex. Unindexed collections
 store docs but return nothing from semantic search.
 
+## DB Collections (shared data)
+A collection with `type=db` holds **structured JSON entities** instead of documents — the same
+store a Live App's ChatDB uses, but owned by the collection rather than by one chat. Every chat
+the collection is attached to reads and writes the **same rows**, and a change from any of them
+is pushed live to all of them. Live Apps reach it with `pt.db('<name>')`, agents with the
+ChatDB tools' `collection_name`, admins with `pt chatdb … --collection/--collection-id`.
+
+**ChatDB vs DB Collection** — decide by who owns the data. ChatDB belongs to one chat and dies
+with it. A DB Collection belongs to the group, outlives any chat, and is shared by every chat it
+is attached to.
+
+**What grants access:** an active attachment to the chat. Attaching a collection to a task
+attaches it to every chat created from that task afterwards. An agent attachment grants nothing.
+Access per chat is `read_write` (default) or `read_only`; there is no API, CLI or MCP route to
+set `read_only`, so treat every attachment as writable.
+
+**Good uses:**
+- **One backend, many chats** — a team CRM or shared queue: each person's chat runs the same
+  Live App on one collection.
+- **Task with a shared backend** — attach the collection to a catalog task (standups, expense
+  claims, incident reports); every run writes into one store, and a reporting chat with the
+  same collection aggregates them.
+- **Reference data** — catalogs, price lists, glossaries maintained once and read by many apps.
+- **Collectors** — cross-workspace collectors can write into one DB Collection attached to a
+  single dashboard chat, instead of a separate ChatDB per collector chat.
+
+Setup recipe and rules: [admin-recipes.md](admin-recipes.md#set-up-a-shared-db-collection-data-shared-across-chats).
+
 ## Notifications
 User-level alerts tied to a `chat_id` + `group_id` (not directly a workspace — map
 chat → workspace to filter by workspace). Channels: push, websocket badges, 5-min
@@ -84,7 +112,9 @@ self-contained; Memory capability helps track trends across runs.
 
 ## Live Apps
 Interactive html/react pages rendered in a chat (`page_type`). The in-app `pt` API
-is **chat-scoped** — a Live App can read/write only its own chat's data (ChatDB,
-files, messages), not other chats/workspaces. Cross-workspace data must be
-collected server-side and written into the app's chat. Build them with the
+is **chat-scoped** — a Live App reads/writes its own chat's data (ChatDB, files,
+messages) plus any **DB Collection attached to that chat**, and nothing else from
+other chats/workspaces. To share data between chats, attach one DB Collection to
+all of them (see above); to pull in data from chats that can't share a collection,
+collect it server-side and write it into the app's chat. Build them with the
 **primethink-developer** skill.

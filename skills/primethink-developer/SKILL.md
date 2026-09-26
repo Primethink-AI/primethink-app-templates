@@ -1,6 +1,6 @@
 ---
 name: primethink-developer
-description: Build PrimeThink Live Apps (both dynamic index.html apps and compiled React/Vite apps), Tasks, agents, CLI workflows, and Manage SDK integrations. Use this skill whenever the user asks to install the PrimeThink developer skill or to create, modify, build, deploy, or debug anything for PrimeThink — including pt install-developer-skill, Deep1 sandbox app development, pt live-app new, /documents/app deployment, Live Apps, Live Pages, tasks, goals, pt API data management, or Obviously Manage integrations. Also trigger for primethink.js, pt.add, pt.list, ptManage, ptManageUI, chatdb, entity names, or any PrimeThink-specific concept.
+description: Build PrimeThink Live Apps (both dynamic index.html apps and compiled React/Vite apps), Tasks, agents, CLI workflows, and Manage SDK integrations. Use this skill whenever the user asks to install the PrimeThink developer skill or to create, modify, build, deploy, or debug anything for PrimeThink — including pt install-developer-skill, Deep1 sandbox app development, pt live-app new, /documents/app deployment, Live Apps, Live Pages, tasks, goals, pt API data management, or Obviously Manage integrations. Also trigger for primethink.js, pt.add, pt.list, pt.db, DB Collections (data shared across chats), ptManage, ptManageUI, chatdb, entity names, or any PrimeThink-specific concept.
 ---
 
 # PrimeThink Developer
@@ -51,6 +51,7 @@ Based on what you're building, read the appropriate reference before writing cod
 | Publishing a task or Live App project, or testing one in a chat | "Publishing and Testing Projects" below + `references/developer-guide/cli/docs/cli-reference.md` |
 | PrimeThink CLI command/API details | `references/developer-guide/cli/index.md` → exact upstream docs in `docs/` |
 | Live App APIs and patterns | `references/advanced-topics/live-apps/index.md` → specific docs in `docs/` |
+| Data shared across chats, users, or task runs | "Shared Data: DB Collections" below; setup (create + attach) is in the **primethink-admin** skill |
 | Task or Agent (AI workflow instructions) | `references/ai-automation/summary.md` |
 | User, admin, or developer feature outside the focused guides | `references/portals/{user,admin,developer}/index.md` |
 | Live App with Obviously Manage integration | `references/advanced-topics/live-apps/docs/primethink_manage.md` |
@@ -564,6 +565,108 @@ await pt.generateVoice({ text: '...', voice: 'alloy', folder: 'audio' });
 { completed: { $ne: 'true' } }                 // not equal
 { $or: [{ name: { $contains: q } }, { email: { $contains: q } }] }  // OR
 ```
+
+### Shared Data: DB Collections (`pt.db`)
+
+`pt.add/list/edit/...` read and write the **chat's own ChatDB** — it belongs to one chat and
+nothing outside that chat can see it. A **DB Collection** is a collection with `type=db`: the
+same entity store (same entity shape, filters, merge and concurrency rules), but the rows belong
+to the *collection*. Every chat the collection is attached to reads and writes the **same rows**,
+and gets live change events. It outlives any single chat.
+
+**Choose by who owns the data:**
+
+| The data belongs to… | Use |
+|---|---|
+| this one chat / one app instance (a personal todo list, a single project board) | ChatDB — `pt.add`, `pt.list` |
+| a team, a process, or several chats (CRM, shared queue, reference data, logs from many task runs) | DB Collection — `pt.db(...)` |
+
+**Access from a Live App:**
+
+```javascript
+// By name — returns synchronously, resolved on each call, so it is fine at module scope
+const db = pt.db('crm');
+// By numeric id — unambiguous when two attached collections share a name
+const byId = pt.db(42);
+
+// Same CRUD surface as pt itself
+const leads = await db.list({ entityNames: ['lead'], filters: { stage: 'open' }, limit: 50 });
+const lead  = await db.add('lead', { name: 'Acme', stage: 'open' });
+await db.edit(lead.id, { stage: 'won' }, true);                 // merge
+await db.batchAdd('lead', [{ name: 'A' }, { name: 'B' }]);
+await db.batchEdit([{ id: 1, data: { stage: 'lost' }, merge: true }]);
+await db.delete(lead.id);
+await db.batchDelete([1, 2]);
+
+// Which DB Collections does this chat have? (no public helper — call the action)
+const attached = (await pt.action('db_list_collections', {})).result;
+// [{ collection_id, name, access_mode: 'read_write'|'read_only', attached_at }]
+```
+
+`list` returns a bare array unless `returnMetadata: true`, exactly like `pt.list`. Results are
+always newest-first (`created_at DESC`); there is no sort option.
+
+**Concurrent writers are the norm here** — several people and agents in several chats edit the
+same rows. Use optimistic concurrency for anything read-modify-write:
+
+```javascript
+const res = await db.edit(row.id, { ...row.data, qty: row.data.qty - 1 }, false, row.updated_at);
+if (res && res.conflict) {
+  // Someone else changed it first. res.currentEntity is the fresh row — re-apply or ask the user.
+}
+```
+
+**Realtime across chats.** A change made from *any* attached chat fires a
+`collection_db_updated` event in every attached chat, and `pt.onEntityChanged` delivers it
+alongside the chat's own `chat_db_updated` events. It has **no collection filter**, so check
+the collection yourself, or a ChatDB change will be treated as a collection change:
+
+```javascript
+const CRM_ID = 42;
+const off = pt.onEntityChanged((event) => {
+  if (event.collection_id !== CRM_ID) return;   // ChatDB events carry no collection_id
+  // action + ids only, no data: event.entity_id / inserted_ / updated_ / deleted_entity_ids
+  refreshLeads();
+});
+```
+
+Pass `notify_via_socket: false` only through a raw `pt.action('db_add', {...})` call when a bulk
+import should not wake every attached chat; the `pt.db()` client always notifies.
+
+**The collection must be attached to the chat.** Creating it and attaching it is setup work, not
+app code — the **primethink-admin** skill has the recipe. When the collection is missing, calls
+fail with HTTP 404 and a message listing the DB Collections that *are* attached (names and ids);
+a write to a collection attached read-only fails with 403. Handle both at init and show a clear
+"this app needs the `crm` DB Collection attached" state instead of a blank screen. Names match
+exactly and case-sensitively.
+
+**Agents use the same store.** The ChatDB agent tools (`chatdb_list`, `chatdb_get`,
+`chatdb_add`, `chatdb_edit`, `chatdb_delete`) take an optional `collection_name`. The agent is
+not told which DB Collections exist, so name the collection in the task prompt or goal
+("record every decision in the `decisions` DB Collection").
+
+**Patterns that use it well:**
+- **One backend, many chats** — each team member's chat runs the same Live App against one
+  `crm` collection; everyone sees the same pipeline, live.
+- **Task with a shared backend** — collections attached to a task are attached to every chat
+  created from it. Publish a *Daily standup* / *Expense claim* / *Incident report* task with a DB
+  Collection and every run writes into one store; a reporting chat with the same collection
+  attached aggregates all of them.
+- **Reference data** — a product catalog, price list or glossary maintained in one place and
+  read by many apps.
+
+**Rules:**
+- Entity names must be identifiers (`^[a-zA-Z_][a-zA-Z0-9_]*$`, ≤100 chars). `add` accepts
+  `my-entity`, but `list({ entityNames: ['my-entity'] })` is rejected — use `my_entity`.
+- Exact-match, `$in` and `$ne` filters compare the field's **text** form (`data->>field`). A
+  JSON `true` is stored as the text `true`, but a DB Collection filter written as
+  `{ done: true }` is sent as `True` and matches nothing — ChatDB normalises booleans, DB
+  Collections do not. Filter booleans with the strings `'true'` / `'false'`, which match in both
+  stores. `$gt/$gte/$lt/$lte` cast the field to a number.
+- A list with no `limit` returns every row. Always page a shared collection — it grows with every
+  chat that writes to it.
+- Seed-if-empty demo data is wrong for a shared collection: it lands in everyone's data. Seed
+  only the chat's own ChatDB, or seed deliberately from setup.
 
 ### AI-from-App Pattern (hidden message → wait → parse → tell the user)
 

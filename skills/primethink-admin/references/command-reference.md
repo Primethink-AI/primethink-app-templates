@@ -61,6 +61,9 @@ admin-relevant ones; run `pt <group> <cmd> --help` for the complete list.
 - `pt chatdb add <chat_id> --entity <name> [--data <json>] [--items <json>]`
 - `pt chatdb update <chat_id> [--entity-id <id> --data <json> --merge/--replace] [--items <json>]`
 - `pt chatdb delete <chat_id> [--entity-id <id>] [--ids <csv>] [--yes]`
+- `list`/`get`/`add`/`update`/`delete` take `--collection <name>` and/or `--collection-id <id>`
+  to target a **DB Collection attached to that chat** instead of the chat's own store (the id is
+  unambiguous when names repeat). `update` also takes `--if-unchanged-since <timestamp>`.
 
 ## task
 - `pt task list [--type <t>…] [--status] [--page-type chat|html|react] [--search -s] [--starred] [--order-by --order-dir --page --page-size]`
@@ -103,7 +106,8 @@ admin-relevant ones; run `pt <group> <cmd> --help` for the complete list.
 
 ## collection
 - `pt collection list [--search -s --page --page-size]` · `get <id>`
-- `pt collection create --name <n> [--description --type --public/--private]`
+- `pt collection create --name <n> [--description --type collection|skill|external_source|db --public/--private]`
+  — `--type db` makes a shared DB Collection; attach it to chats via REST (see admin-recipes).
 - `pt collection update <id> [--indexed/--not-indexed --ocr-instructions …]`
 - `pt collection reindex <id>` · `copy <id>` · `delete <id> [--yes]`
 - `pt collection upload-files/upload-text/download-file/delete-file <id> …`, sync, directories, versions.

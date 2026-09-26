@@ -67,6 +67,63 @@ for WS in $(pt workspace list --page-size 100 | jq -r '.[]?.id , .items[]?.id');
 done
 ```
 
+## Set up a shared DB Collection (data shared across chats)
+
+A DB Collection (`type=db`) is a JSON entity store that every attached chat reads and writes in
+common — see [concepts.md](concepts.md#db-collections-shared-data). Setup is: create it, attach
+it to each chat (or to the task that spawns the chats), then verify from a chat.
+
+```bash
+pt whoami                                                    # right env + active group
+CID=$(pt collection create --name crm --type db --private | jq -r '.id')
+```
+
+Attaching has no `pt` command — call REST with the token of a user who is a member of the chat
+(header `Authorization: Token …`):
+
+```bash
+API=${PRIMETHINK_API_URL:-https://api.primethink.ai}
+H="Authorization: Token $PRIMETHINK_TOKEN"
+
+# Attach to one or more existing chats
+for CHAT in 1201 1202 1203; do
+  curl -fsS -X POST "$API/api/v1/chats/$CHAT/collections/$CID" -H "$H" >/dev/null
+done
+
+# ...or to a task: every chat created from the task gets the collection too
+# (attach chats that already exist individually, as above)
+curl -fsS -X POST "$API/api/v1/tasks/$TASK_ID/collections-files" \
+  -H "$H" -H 'Content-Type: application/json' \
+  -d "{\"collection_ids\": [$CID], \"file_ids\": []}"
+```
+
+Verify from one attached chat, and seed reference data if the use case needs it:
+
+```bash
+pt chatdb add 1201 --collection-id "$CID" --entity lead --data '{"name":"Acme","stage":"open"}'
+pt chatdb list 1202 --collection-id "$CID" --entity lead     # same row, seen from another chat
+```
+
+If `pt chatdb list --help` shows no `--collection` / `--collection-id`, send the same request
+to REST: `POST $API/api/v1/chats/<chat_id>/chatdb/list` with body
+`{"collection_id": <CID>, "entity_names": ["lead"]}` (the `/entities` add/update/delete bodies
+take `collection_id` / `collection_name` the same way).
+
+Detach with `curl -X DELETE "$API/api/v1/chats/$CHAT/collections" -H "$H" -H 'Content-Type:
+application/json' -d "[$CID]"`, or pause a chat's access without detaching with
+`curl -X PUT "$API/api/v1/chats/$CHAT/collections/$CID/status?status=disabled" -H "$H"`.
+
+Rules that matter here:
+- **Keep every chat that shares a collection in one group.** Rows are stored per group, under
+  the group of the chat making the call — attaching the same collection to chats in two groups
+  silently gives each group its own separate data.
+- **Deleting the collection does not delete its rows.** Clear the data first
+  (`pt chatdb delete <chat_id> --collection-id $CID --ids …`) if it must not linger.
+- Attaching to an **agent** (`pt agent attach-collections`) does not give any chat access —
+  only a chat attachment (direct or via its task) does.
+- Entity names must be identifiers (`lead`, `sales_lead`) — a hyphenated name can be written but
+  never listed by name.
+
 ## Clean up test objects
 ```bash
 pt chat delete <id> --yes

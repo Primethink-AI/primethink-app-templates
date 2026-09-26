@@ -76,6 +76,24 @@ cost hours.
   Deleting a task doc does **not** remove it from chats already launched from the task.
 - `pt chat send` returns before a sandbox run completes — poll ChatDB for the result.
 
+## DB Collections
+- **Attaching a collection to a chat has no `pt` or MCP command.** Use REST:
+  `POST /api/v1/chats/<chat_id>/collections/<collection_id>` (recipe in admin-recipes.md).
+- **`read_only` access cannot be set.** The attachment column exists and is enforced (writes
+  fail 403), but no API, CLI or MCP route sets it — every attachment is `read_write`.
+- **Rows are stored under the group of the calling chat.** One collection attached to chats in
+  two groups gives each group its own separate rows — nothing warns you. Keep sharers in one group.
+- **Deleting a DB Collection leaves its rows in the database.** Delete the entities first if the
+  data must go.
+- **Agent tools address a DB Collection by name only** (`collection_name`), and the agent is not
+  told which DB Collections are attached — name it in the task prompt or goal. Give attached
+  collections distinct names; with duplicates the first match wins.
+- **Boolean filters on a DB Collection need string values** — `{"done": "true"}`, not
+  `{"done": true}` (which matches nothing). ChatDB accepts either.
+- `pt chatdb` and the MCP `chatdb_*` tools take `collection_name` / `collection_id`
+  (`--collection` / `--collection-id`); when a build lacks them, `pt chatdb <cmd> --help` shows
+  no such option — call `/api/v1/chats/<chat_id>/chatdb/*` with the same fields instead.
+
 ## MCP-layer quirks (if you use `pt mcp` instead of the CLI)
 - Some endpoints return **HTTP 204 / empty body on success** (`assign_tags`,
   `set_production_version`). Treat an empty 2xx as success, not a parse failure.
