@@ -161,6 +161,27 @@ Custom colours, fonts, and other design tokens are declared with `@theme`. Put i
 <button class="bg-brand hover:bg-brand-strong text-white px-4 py-2 rounded-lg">Save</button>
 ```
 
+### When two colour utilities collide, alphabetical order decides
+
+Tailwind emits colour utilities in **alphabetical order**, and both of these are ordinary classes of equal specificity. So if an element carries a custom colour *and* a palette colour for the same property, the winner is decided by the class names:
+
+```html
+<!-- bg-card wins, because "c" sorts before "w" -->
+<div class="bg-white bg-card">…</div>
+
+<!-- bg-slate-100 wins, because "c" sorts before "s" — the opposite result -->
+<div class="bg-slate-100 bg-card">…</div>
+```
+
+Nothing warns you. It is not a build error, a lint warning or a failed verification — the page simply renders the wrong colour, and renaming a token can silently flip the outcome.
+
+**Do not rely on one colour utility overriding another.** Remove the one you do not want. When you build reusable components, give them no palette colours at all and drive their colour from CSS variables, so a project can repoint the variables instead of fighting the class order at every call site. That is how the [React starter's shipped primitives](/developer/PrimeThink-CLI/#the-shipped-primitives-carry-no-colours-of-their-own) work.
+
+Two related traps in the same family:
+
+- **A token can shadow a real utility.** Name a colour `right` and `@theme` generates `text-right` and `bg-right`, which already mean `text-align: right` and `background-position: right`. Avoid naming tokens after Tailwind keywords — `right`, `left`, `center`, `top`, `bottom`, `none`, `auto`, `full` — or prefix them (`--color-mark-right`).
+- **An undefined token emits nothing at all.** A class referring to a token you never declared produces no CSS rather than an error, so the element keeps whatever it inherited.
+
 ## Differences from Tailwind v3
 
 Models and developers alike have years of v3 habit; these are the changes that bite in Live Apps.

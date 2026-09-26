@@ -39,6 +39,27 @@ The application presents tasks through a sectioned navigation menu, where:
 - Tasks are presented with clear goals and optional scheduling
 - Initial prompts guide users when accessing each section
 
+## Installing a Live App
+
+A Live App can be installed as an app in its own right, so it sits on a desktop or home screen as a separate icon rather than as a shortcut into PrimeThink.
+
+This works because each Live App is served with its own web app manifest, describing that one app: its own identity, its own starting address, and its own scope. Two Live Apps therefore install as two apps, each with its own window and its own icon, instead of collapsing into a single PrimeThink install.
+
+There is nothing to switch on. Open the Live App in a browser that supports installing web apps and use its **Install** action.
+
+A few consequences worth knowing:
+
+- **An app's identity is tied to its chat, not to its name.** Renaming a Live App changes what the installed app is called, and does not strand or duplicate an existing install.
+- **The icon comes from the Live App's own image** when it has one — the image set on the task behind it. An app with no image of its own installs with the PrimeThink mark instead.
+
+### Choosing an image that installs well
+
+Two Live Apps installing as two icons is only useful if you can tell them apart, so give each app its own image.
+
+The image does not have to be square. It is used as the icon as long as each delivered size is at least **144 pixels in both dimensions**, which is what browsers require of an installable icon. Images are scaled down but never up, so a small source stays small: a 200x150 image asked for at 512 wide arrives at its own size, not stretched. A source of roughly 512 pixels or more on its shortest side is comfortably safe at every size an installer asks for.
+
+**Upload a PNG.** Browsers only accept PNG, SVG, or WebP for an installable icon, and a resized image is re-encoded as JPEG — which Chrome refuses, and refuses quietly, by simply not offering to install the app. A PNG at or above the sizes an installer asks for is passed through in its original format, which is why a large PNG is the reliable choice.
+
 ## Building Live Apps
 
 ### Orchestration Patterns

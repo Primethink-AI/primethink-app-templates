@@ -232,6 +232,39 @@ Possible errors include:
 
 ---
 
+### Launch a Task into a Chat
+
+Launching a task creates a chat that starts from that task: it inherits the task's goal, default agent, settings, documents, collections, and scheduled job, and the task's initial prompt is posted as the first message. This is what the app does when you open a task.
+
+**Endpoint**: `POST /api/v1/tasks/{task_id}/launch`
+
+```bash
+curl -X POST \
+  "https://api.primethink.ai/api/v1/tasks/280/launch" \
+  -H "accept: application/json" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Token YOUR_API_TOKEN_HERE" \
+  -d '{"chat_workspace_id": 738, "name": "Workspace Activity Collector"}'
+```
+
+All body fields are optional:
+
+- `chat_workspace_id` — the workspace to put the new chat in, given as either its numeric ID or its UUID
+- `name` — a name for the new chat; the task's name is used when omitted
+- `task_version_number` — launch a specific version of the task instead of its Production version
+- `members` — users and agents to add to the new chat
+
+A successful call returns `201` with the new chat, including its `id`, `uuid`, `task_id`, `default_virtual_assistant_id`, and `chat_workspace_id`. Use the `uuid` to build a link to the chat.
+
+You can launch a task you are allowed to *use*, which is a wider set than the tasks you are allowed to *manage*: a catalog task, a task in your group that is public, system-wide, or yours, or a private task a role grants you. A task you cannot see answers `404`.
+
+`POST /api/v1/chats` can also launch a task, by passing the task's ID as `task_id` in the body or as the `copy_from_task_id` query parameter. Passing both with different values returns `400`. Prefer the dedicated launch endpoint in new code — it is explicit about what it does and returns the same chat payload.
+
+!!! note "Launching a task into a subchat keeps both sets of documents"
+    `POST /api/v1/chats` accepts a task *and* a `parent_chat_id` in the same call, which creates a subchat that is also a task launch. The new chat gets the task's documents and collections **and** inherits the parent chat's, merged rather than one replacing the other. A document attached to both is linked once, keeping the task's own attachment — so a task launched this way still runs against its own knowledge base.
+
+---
+
 ### Check and Apply Task Updates to a Chat
 
 Chats created from a task remain linked to that task. Use the check endpoint to determine whether the chat differs from the task's **Production** version, then use the update endpoint to apply that version. A newer non-production draft does not make `update_available` true.
@@ -251,9 +284,16 @@ curl -X GET \
   "from_task_id": 42,
   "version_id": 3,
   "latest_task_version_id": 4,
-  "update_available": true
+  "update_available": true,
+  "documents_pending": {
+    "add": 1,
+    "remove": 1,
+    "repoint": 0
+  }
 }
 ```
+
+`documents_pending` is a dry run of the document reconciliation the apply endpoint would perform: how many inherited documents would be added, removed, or repointed at a different document. Adding or removing a task's documents does not create a new task version, so this is what keeps `update_available` honest when only the documents changed — any non-zero count makes an update available.
 
 **Apply endpoint**: `POST /api/v1/chats/{chat_id}/task-updates/update`
 
@@ -264,7 +304,16 @@ curl -X POST \
   -H "Authorization: Token YOUR_API_TOKEN_HERE"
 ```
 
-The update copies the Production version's task-backed fields into the chat. It also performs a full mirror of the task's Live App `app/` subtree: changed and new files are synchronized, files removed from the task are removed from the chat, and documents outside `app/` are preserved.
+The update copies the Production version's task-backed fields into the chat. It also performs a full mirror of the task's Live App `app/` subtree: changed and new files are synchronized, files removed from the task are removed from the chat, and documents outside `app/` are preserved. The task's linked collections are attached to the chat as well, keeping each collection's visibility and active status, and re-running the update does not duplicate them.
+
+#### Inherited documents and their provenance
+
+A chat launched from a task holds its own links to the task's documents. Those links record where they came from, and document listings — `GET /api/v1/chats/{chat_id}/documents` and `GET /api/v1/chats/{chat_id}/directories` — report it:
+
+- `source_task_id` — the task this link was inherited from, or `null` for anything uploaded or attached directly
+- `source_removed_from_task` — `true` when that task no longer offers the document, so you can show a stale inherited file as such
+
+Applying an update reconciles the inherited documents outside `app/`: a document the task dropped is removed, one whose task document changed is repointed, and a task document the chat does not have yet is added and stamped with its origin. Links without provenance are never touched, so anything uploaded into the chat directly survives an update untouched. A task document that would collide with a file already at that path is counted in `skipped_conflicts` rather than shadowing what is there. The counts arrive as `task_documents_synced`, with `task_documents_warning` set if the reconciliation could not complete — like the `app/` mirror, it is best effort and never blocks the rest of the update.
 
 A successful response includes per-operation document counts:
 
@@ -289,9 +338,21 @@ A successful response includes per-operation document counts:
 }
 ```
 
+Collection synchronization is reported the same way, alongside the document counts:
+
+```json
+{
+  "collections_synced": {
+    "added": 1,
+    "updated": 0
+  },
+  "collections_warning": null
+}
+```
+
 Document synchronization runs even if there are no scalar-field changes. In that case, `detail` is `No changes detected. No chat version was created.`, `fields_to_update` is empty, and `created_chat_version_number` is `null` or omitted.
 
-Live App file synchronization is best effort. If it fails, the task's other fields and any resulting chat version can still be updated; `documents_synced` is `null` and `documents_warning` contains `Live-app files could not be synced.` Treat a non-null warning as a partial update and retry or verify the chat's `app/` files before serving the Live App.
+Live App file synchronization is best effort. If it fails, the task's other fields and any resulting chat version can still be updated; `documents_synced` is `null` and `documents_warning` contains `Live-app files could not be synced.` Treat a non-null warning as a partial update and retry or verify the chat's `app/` files before serving the Live App. Collection synchronization is best effort in the same way: a failure leaves `collections_synced` null, fills `collections_warning`, and does not prevent the rest of the update.
 
 The apply endpoint returns HTTP 400 if the chat is not linked to a task and HTTP 404 if its source task no longer exists. Standard chat access checks also apply.
 
@@ -582,6 +643,18 @@ Read `Retry-After` to determine how many seconds to wait before trying again. `X
 - Maximum file size per upload: 50MB
 - Maximum total size per request: 200MB
 - Maximum number of files per request: 10
+
+### Uploading a File That Already Exists
+
+Uploading a file whose name is already taken in the target folder does not create a second copy:
+
+| Situation | Result |
+|---|---|
+| Same name, identical content | `200` — the existing document is reused, nothing is duplicated |
+| Same name, different content | `200` — the file is replaced in place and a new **Production** version is recorded |
+| The conflict cannot be resolved | `409` — `A file named '<name>' already exists in this folder` |
+
+This applies whether or not you pass a `path`: an upload with no path targets the folder's root, and replacement works there the same way it does inside a folder. Pass `create_new_version_on_replace=false` if you want the content replaced without recording a new version.
 
 ### File Upload Best Practices
 

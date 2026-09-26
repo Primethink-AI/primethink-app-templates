@@ -2,6 +2,90 @@
 
 Here's a summary of recent updates and improvements to the PrimeThink platform, grouped by week and version.
 
+### **Week of September 21, 2026**
+
+This week the assistant learned to look at pictures you sent earlier, dropdowns started behaving the same way everywhere, and empty screens started explaining themselves.
+
+**Chat Interface & Experience**
+
+* The assistant can now **look at an image you sent earlier**, instead of only reading its filename. Ask about a screenshot or photo from further up the conversation and it can open it and see it. An image it has looked at stays in view for the rest of the conversation, up to five at a time.
+* Dropdowns behave the same way everywhere now: a menu anchored to the field on a wide screen, a sheet from the bottom of the screen on a narrow one, with a search box appearing automatically once a list gets long. The old mix of styles — including a spinning wheel on Apple devices — is gone.
+* Empty screens now tell you *why* they are empty. Searching with filters that match nothing, opening the archive when you have not archived anything, opening an empty catalog, and failing to load are four different messages rather than one blank panel. A slow response can no longer arrive late and overwrite newer results.
+* Greys throughout light mode have been reworked so text and surfaces separate more clearly.
+* The documents dialog is now titled for what you are looking at, so a Live App's documents are labelled as such instead of as a task's.
+
+**Notifications**
+
+* When an administrator adds your existing account to another group, you are told. Because there is no invitation to accept in that case — you are a member immediately — nothing used to appear anywhere, and you could belong to a group without knowing. You now get a notification, on your devices as well as in the app, and it is visible whichever group you happen to be looking at. Selecting it takes you into the new group.
+
+**Fixes**
+
+* A message that failed while a task was starting up could leave the assistant's reply stuck showing "thinking" indefinitely. It is now reported as an error instead.
+
+### **Week of September 14, 2026**
+
+This week brought a single place to start anything new, a memory screen organized around pages, and Live Apps you can install like any other app.
+
+**Getting Started & Navigation**
+
+* The sidebar's separate buttons for new chats, tasks and direct messages are now one **Create** button. It opens a Create area with a tab for each thing you can start — a chat, a task, a Live App, or a direct message — and the tabs you see depend on what your permissions allow. The task and Live App tabs let you search, page through everything available, and jump straight to what you used recently or marked as a favourite. The tab you used last is the one that opens next time.
+* Menus across the app now behave consistently: they open as a pop-up on a wide screen and as a bottom sheet on a narrow one, support nested options, and respond to a long press or a secondary tap.
+* The workspace list in the sidebar decides how much to show based on what actually fits, and keeps the workspace you have selected visible while it is expanded.
+
+**Memory**
+
+* The memory screen is now organized into **pages** rather than one long list of sentences. Each page covers one thing — you, a preference, a person, a project, a topic — with a short summary, your own notes, and the individual memories filed under it. Pages are grouped into categories, and every category is shown even when it is still empty, so you can see where new pages will go.
+* Opening a page shows its memories as bullets, which you edit and delete exactly as before. Summaries are written for you rather than edited directly; a page whose contents you change shows a note that its summary will refresh.
+* You can create a page yourself by giving it a title and a category.
+* The option to clear your memory entirely is still there, still behind a confirmation you have to type out.
+* Changing something you told the assistant no longer erases what it used to know. The previous version is kept as dated history and linked to the new one, so the assistant can say "you told me London until March, now it's Milan" instead of either denying the old fact or repeating it as though it were still true. Only the current statement is ever treated as true.
+* Asking the assistant to **forget** something still removes it completely, along with everything it replaced. That is now the only thing that erases history — correcting a fact does not.
+* A lasting instruction — the kind that changes how the assistant behaves in every conversation — is now only saved when the assistant can quote your own words for it. An instruction that appears in a document, a web page, an image, or a tool's output is not you speaking, and will not be turned into a standing rule. This stops something you merely shared with the assistant from quietly changing how it treats you.
+
+**Tasks, Agents & Live Apps**
+
+* Tasks, Live Apps and agents can now be **archived** from the app. Archive and Unarchive are on the item's own menu and ask you to confirm; archived items drop out of the list until you turn on the archived filter, and nothing is deleted.
+* A Live App can be **installed as its own app**, so it sits on your desktop or home screen as a separate icon with its own window, instead of as a shortcut into PrimeThink. Several Live Apps install as several apps. An app with its own image installs with that image as the icon — a large PNG gives the best result.
+* A Live App left open for days keeps working. Previously one that had been open for more than a day quietly stopped updating and had to be reloaded.
+
+**Chat Interface & Experience**
+
+* Messages have a reworked layout, with clearer grouping, better handling of attachments and generated content, a more compact way of showing an assistant's reasoning, and tidier code blocks with a copy control.
+* On a phone, opening something from the sidebar now closes the sidebar behind you instead of leaving it covering the screen.
+
+### **Week of September 7, 2026**
+
+This week's work went into what the assistant remembers, tidying long lists with archiving, and making conversations that run through Telegram and Slack handle files in both directions.
+
+**Memory**
+
+* Memory now maintains itself overnight. New memories are filed onto the page they belong to, pages about the same thing are merged, duplicate notes are removed, and contradictions are settled in favour of the newer statement — with an explicit correction kept, so something you have overruled is not learned again. A memory written during the day is searchable and available in conversation straight away; the tidying only decides where it lives.
+
+**Tasks & Agents**
+
+* Tasks, Live Apps and agents can be archived instead of deleted. An archived item keeps everything about it — a task keeps its goal, documents, schedule and history — and simply stops appearing in the list until you ask to see archived items.
+
+**Channels (Telegram & Slack)**
+
+* You can now send a **photo or a file to a Telegram bot** and have the assistant work with it: look at the image, read the PDF. Whatever you write with it becomes your message, and a photo sent with no caption still gets a reply. Files up to 20 MB are accepted, and anything larger is refused with a note rather than ignored. In a group the bot's usual reply rules apply first, so mention it when you want it to look at something.
+* **Files the assistant produces now arrive in the conversation.** A spreadsheet or calendar invite it generated is sent after its reply, since someone working in Telegram or Slack cannot open the chat's documents. Images appear inline on Telegram and files land in the same Slack thread as the answer.
+
+**Groups & Sign-in**
+
+* The group switcher now has a **Create group** entry alongside adding an existing one, and a group whose session has expired offers a fresh sign-in rather than a switch that would just fail.
+* When you add a group under another account, the picker now shows the groups you are already signed in to, marked as such, and asks you to confirm before it drops one. If the account has a single group and you are not signed in anywhere else, you go straight into the app.
+* The sign-in screen offers **Back to the app** when you already have a session, so reaching it by accident is no longer a dead end.
+
+**Working Together**
+
+* Adding people to a chat now uses a picker with separate tabs for people and assistants, a search box, and a chip for each one you have chosen so you can see your selection as you build it. Anyone already in the chat is left out of the list.
+
+**Documents**
+
+* Removing a document from a chat you started from someone else's task now works. It used to fail with "document not found", leaving a file you could not get rid of.
+* A document a chat inherits from a task now shows its proper name, instead of arriving as "Document 'None'".
+* Uploading a file whose name is already taken in a task no longer errors. The file is replaced in place and the previous content is kept as an earlier version.
+
 ### **Week of April 21, 2025**
 
 This week, we've focused on enhancing collaboration within workspaces, streamlining task management, and refining the user interface for a smoother experience.

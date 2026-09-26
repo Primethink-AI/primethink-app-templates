@@ -39,8 +39,8 @@ User Action              Widget Action                    Backend Action
 2. Create Session  →     POST /public-session            → Generate session ID
                                                           → Return session ID
 
-3. Receive Response ←    Get session ID: "abc-123"
-                         Build URL: chat?sid=abc-123
+3. Receive Response ←    Read session_id from the JSON object
+                         Build URL: /live/{chat-id}/public?sid=abc-123
 
 4. Load Chat       →     Set iframe.src = URL
                          Save URL to localStorage
@@ -58,7 +58,7 @@ User Action              Widget Action                    Backend Action
 2. **Button Click**: User clicks the floating button
 3. **API Call**: POST request to `https://app.primethink.ai/api/v1/public/chats/{chat-id}/public-session`
 4. **Session Creation**: Backend returns a session ID (e.g., `"00136af9-a102-42e1-9ca1-e24ba6c30b4a"`)
-5. **URL Construction**: Widget builds URL: `https://app.primethink.ai/public/chats/{chat-id}?sid={session-id}`
+5. **URL Construction**: Widget builds URL: `https://app.primethink.ai/live/{chat-id}/public?sid={session-id}`
 6. **Load Chat**: iframe loads the chat with session ID
 7. **Persist Session**: URL saved to localStorage
 8. **Restore on Refresh**: Next page load/refresh restores the saved session
@@ -200,7 +200,7 @@ class SupportChat {
 
         // Configuration - CHANGE THESE VALUES
         this.chatId = 'f6a7b8c9-d0e1-4234-9123-456789012345';
-        this.baseUrl = `https://app.primethink.ai/public/chats/${this.chatId}`;
+        this.baseUrl = `https://app.primethink.ai/live/${this.chatId}/public`;
         this.apiUrl = `https://app.primethink.ai/api/v1/public/chats/${this.chatId}/public-session`;
 
         // Storage keys
@@ -224,7 +224,7 @@ class SupportChat {
         this.chatButton.classList.add('hidden');
 
         // Check for saved session
-        const savedUrl = localStorage.getItem(this.STORAGE_KEY);
+        const savedUrl = this.readSavedSession();
         if (savedUrl) {
             this.iframe.src = savedUrl;
             return;
@@ -246,7 +246,8 @@ class SupportChat {
                 throw new Error(`Session creation failed with status ${response.status}`);
             }
 
-            const sessionId = await response.json();
+            // The endpoint returns { session_id, scoped_token } — not a bare string.
+            const { session_id: sessionId } = await response.json();
             const sessionUrl = `${this.baseUrl}?sid=${sessionId}`;
 
             this.iframe.src = sessionUrl;
@@ -265,12 +266,37 @@ class SupportChat {
     }
 
     restoreSession() {
-        const savedUrl = localStorage.getItem(this.STORAGE_KEY);
+        const savedUrl = this.readSavedSession();
         if (savedUrl) {
             this.chatFrame.classList.add('open');
             this.chatButton.classList.add('hidden');
             this.iframe.src = savedUrl;
         }
+    }
+
+    // A visitor who used the chat before the URL changed still has the old
+    // address in localStorage. Keep their session id, but rebuild the URL from
+    // the current baseUrl so they are not sent to the deprecated path.
+    readSavedSession() {
+        const savedUrl = localStorage.getItem(this.STORAGE_KEY);
+        if (!savedUrl) return null;
+
+        let sid = null;
+        try {
+            sid = new URL(savedUrl, window.location.origin).searchParams.get('sid');
+        } catch {
+            // Not a URL we can read — drop it and start a fresh session.
+            localStorage.removeItem(this.STORAGE_KEY);
+            return null;
+        }
+        if (!sid) {
+            localStorage.removeItem(this.STORAGE_KEY);
+            return null;
+        }
+
+        const currentUrl = `${this.baseUrl}?sid=${sid}`;
+        if (currentUrl !== savedUrl) localStorage.setItem(this.STORAGE_KEY, currentUrl);
+        return currentUrl;
     }
 }
 
@@ -293,7 +319,7 @@ To use your own Primethink chat, you need:
 ```javascript
 // Example for chat ID: abc-123-def-456
 this.chatId = 'abc-123-def-456';
-this.baseUrl = `https://app.primethink.ai/public/chats/${this.chatId}`;
+this.baseUrl = `https://app.primethink.ai/live/${this.chatId}/public`;
 this.apiUrl = `https://app.primethink.ai/api/v1/public/chats/${this.chatId}/public-session`;
 ```
 
@@ -301,10 +327,15 @@ this.apiUrl = `https://app.primethink.ai/api/v1/public/chats/${this.chatId}/publ
 
 Your Primethink public chat URL looks like:
 ```
-https://app.primethink.ai/public/chats/f6a7b8c9-d0e1-4234-9123-456789012345
-                                        └─────────────┬─────────────┘
-                                                  This is your Chat ID
+https://app.primethink.ai/live/f6a7b8c9-d0e1-4234-9123-456789012345/public
+                               └─────────────────┬────────────────┘
+                                       This is your Chat ID
 ```
+
+!!! note "The older `/public/chats/{chat-id}` address still works"
+    Public chats used to be served at `https://app.primethink.ai/public/chats/{chat-id}`. Links already shared with that address are forwarded to the new one, carrying their query string with them, so an existing session and an embedder's UI overrides both survive the hop. Use the `/live/{chat-id}/public` form in anything new — the older path is kept only for links that are already out in the world.
+
+    Note that the session endpoint is unchanged: it is still `POST /api/v1/public/chats/{chat-id}/public-session`.
 
 ### Enabling File Uploads
 
@@ -333,7 +364,7 @@ You can customize the appearance of an embedded public chat by appending query p
 ### URL Format
 
 ```
-https://app.primethink.ai/public/chats/{chat-id}?sid={session-id}&ui_chat_title=My+Bot&ui_theme=dark
+https://app.primethink.ai/live/{chat-id}/public?sid={session-id}&ui_chat_title=My+Bot&ui_theme=dark
 ```
 
 ### Available Parameters
@@ -343,7 +374,7 @@ https://app.primethink.ai/public/chats/{chat-id}?sid={session-id}&ui_chat_title=
 | `ui_chat_title` | Overrides the chat name shown in the top bar | Any string | `ui_chat_title=Sales+Assistant` |
 | `ui_chat_footer_msg` | Displays a message below the chat input (e.g. a disclaimer) | Any string | `ui_chat_footer_msg=AI+may+make+mistakes` |
 | `ui_theme` | Forces light or dark mode for the chat UI | `light`, `dark` | `ui_theme=dark` |
-| `ui_bg_color` | Sets the chat background color | Hex code or color name | `ui_bg_color=%23f5f5f5` |
+| `ui_bg_color` | Sets the background behind the messages | Hex code or color name | `ui_bg_color=%23f5f5f5` |
 | `ui_agent_msg_color` | Sets the color accent for agent (bot) messages | Hex code or color name | `ui_agent_msg_color=teal` |
 | `ui_guest_msg_color` | Sets the color accent for guest (user) messages | Hex code or color name | `ui_guest_msg_color=%23667eea` |
 
@@ -353,10 +384,36 @@ All parameters are optional. When omitted, the chat falls back to its default ap
 
 Color parameters (`ui_bg_color`, `ui_agent_msg_color`, `ui_guest_msg_color`) accept:
 
-- **Hex codes**: `#rgb`, `#rgba`, `#rrggbb`, `#aarrggbb` (with or without the `#` prefix)
-- **Named colors**: `red`, `blue`, `green`, `teal`, `purple`, `indigo`, `cyan`, `orange`, `amber`, `pink`, `lime`, `yellow`, `brown`, `grey` / `gray`, `white`, `black`, `transparent`, `deeppurple`, `deeporange`, `lightblue`, `lightgreen`, `bluegrey` / `bluegray`
+- **Hex codes**: `#rgb`, `#rgba`, `#rrggbb` and `#rrggbbaa`, with or without
+  the `#` prefix. The 4- and 8-digit forms carry an alpha channel and are
+  accepted, but read it as CSS does — see the note below if you are moving a
+  link over from the old chat. Five- and seven-digit values are not hex codes
+  in CSS and are ignored.
+- **Named colors**: any [CSS color keyword](https://developer.mozilla.org/en-US/docs/Web/CSS/named-color) — `red`, `teal`, `indigo`, `rebeccapurple`, `transparent` and so on
+- **Functional notation**: `rgb(...)`, `rgba(...)`, `hsl(...)`, `hsla(...)`
 
 > **Note**: When using hex codes in a URL, encode the `#` character as `%23`. For example: `ui_bg_color=%23f0f0f0`
+
+A value that is not recognised is ignored and that part of the UI keeps its
+default, so a typo cannot break the page.
+
+> **Changed**: the public chat is now served by the app runner rather than by the
+> main app, and colors are resolved as CSS rather than as Material colors. Two
+> things follow:
+>
+> - Material-only names — `amber`, `deeppurple`, `deeporange`, `bluegrey` /
+>   `bluegray` — are no longer recognised. Use a hex code, or the nearest CSS
+>   keyword.
+> - The 4- and 8-digit hex forms still work, but they no longer mean the same
+>   thing: CSS puts the alpha channel **last** (`#rgba`, `#rrggbbaa`) where
+>   Material put it **first** (`#argb`, `#aarrggbb`). A value written for the old
+>   chat is therefore read differently — `#8000` was semi-transparent black and
+>   is now fully transparent red. Rewrite those with the alpha last, or use the
+>   3- or 6-digit form, which means the same in both.
+>
+> Names shared by both — `red`, `teal`, `indigo` and the rest — keep working,
+> though the exact shade shifts a little: CSS `red` is `#ff0000` where Material
+> `red` was `#f44336`.
 
 ### Example: Fully Customized Embed
 
@@ -374,7 +431,7 @@ const params = new URLSearchParams({
     ui_guest_msg_color: '#28a745',
 });
 
-const chatUrl = `https://app.primethink.ai/public/chats/${chatId}?${params}`;
+const chatUrl = `https://app.primethink.ai/live/${chatId}/public?${params}`;
 iframe.src = chatUrl;
 ```
 
@@ -382,7 +439,7 @@ iframe.src = chatUrl;
 
 - Parameters are preserved across redirects (e.g. when a session is created and the URL changes).
 - `ui_chat_title` overrides the chat name everywhere it appears (top bar and browser tab title).
-- `ui_chat_footer_msg` takes precedence over the server-configured `UI_CHAT_FOOTER_MSG` setting when provided. (`UI_CHAT_FOOTER_MSG` is one of the platform's server-side [UI Settings](/UI-Settings/), configured by administrators — not a chat Extra field.)
+- `ui_chat_footer_msg` is the only source of the footer line: the public chat shows nothing there unless the link asks for it.
 - `ui_theme` overrides the user's system theme preference for the chat window only.
 
 ---
@@ -404,14 +461,20 @@ Accept: */*
 {}
 ```
 
-**Response**: Plain JSON string containing session ID
+**Response**: JSON object carrying the session ID
 ```json
-"00136af9-a102-42e1-9ca1-e24ba6c30b4a"
+{
+  "session_id": "00136af9-a102-42e1-9ca1-e24ba6c30b4a",
+  "scoped_token": "..."
+}
 ```
+
+Read `session_id` from it. `scoped_token` is the chat page's own Socket.IO
+credential — the embedded page obtains its own, so a widget does not need it.
 
 **Usage**: Append to URL as `?sid=` parameter
 ```
-https://app.primethink.ai/public/chats/{chat-id}?sid={session-id}
+https://app.primethink.ai/live/{chat-id}/public?sid={session-id}
 ```
 
 ### Example with cURL
@@ -425,7 +488,10 @@ curl -X POST "https://app.primethink.ai/api/v1/public/chats/<chat_share_id>/publ
 
 **Response**:
 ```json
-"00ba58bb-220e-40b8-8959-19294265b17a"
+{
+  "session_id": "00ba58bb-220e-40b8-8959-19294265b17a",
+  "scoped_token": "..."
+}
 ```
 
 ### Public Chat Rate Limits
@@ -463,10 +529,10 @@ The key names are up to your implementation — what matters is persisting the s
 
 ```javascript
 // Minimal single-chat widget
-'support_chat_session_url' = 'https://app.primethink.ai/public/chats/abc-123?sid=def-456'
+'support_chat_session_url' = 'https://app.primethink.ai/live/abc-123/public?sid=def-456'
 
 // Multi-chat widget
-'chat_session_url'   = 'https://app.primethink.ai/public/chats/abc-123?sid=def-456'
+'chat_session_url'   = 'https://app.primethink.ai/live/abc-123/public?sid=def-456'
 'chat_selected_city' = 'london'
 'chat_is_open'       = 'true' | 'false'
 ```
@@ -709,8 +775,9 @@ class MultiChatSupport {
                 throw new Error(`Session creation failed with status ${response.status}`);
             }
 
-            const sessionId = await response.json();
-            const sessionUrl = `https://app.primethink.ai/public/chats/${chatConfig.chatId}?sid=${sessionId}`;
+            // The endpoint returns { session_id, scoped_token } — not a bare string.
+            const { session_id: sessionId } = await response.json();
+            const sessionUrl = `https://app.primethink.ai/live/${chatConfig.chatId}/public?sid=${sessionId}`;
 
             // Load chat
             this.iframe.src = sessionUrl;
@@ -733,6 +800,22 @@ class MultiChatSupport {
         if (savedUrl && selectedCity && wasOpen) {
             const chatConfig = this.chats[selectedCity];
 
+            // A session stored before the chat URL changed still points at the
+            // deprecated path. Keep the session id, rebuild the rest.
+            let sid = null;
+            try {
+                sid = new URL(savedUrl, window.location.origin).searchParams.get('sid');
+            } catch { /* unreadable — fall through and start fresh */ }
+            if (!sid) {
+                localStorage.removeItem(this.STORAGE_KEYS.SESSION_URL);
+                return;
+            }
+            const currentUrl =
+                `https://app.primethink.ai/live/${chatConfig.chatId}/public?sid=${sid}`;
+            if (currentUrl !== savedUrl) {
+                localStorage.setItem(this.STORAGE_KEYS.SESSION_URL, currentUrl);
+            }
+
             // Restore chat state
             this.chatFrame.classList.add('open');
             this.chatButton.classList.add('hidden');
@@ -741,7 +824,7 @@ class MultiChatSupport {
 
             // Restore content
             this.cityBadge.textContent = chatConfig.name;
-            this.iframe.src = savedUrl;
+            this.iframe.src = currentUrl;
         }
     }
 }
@@ -882,7 +965,8 @@ try {
         throw new Error(`Session creation failed with status ${response.status}`);
     }
 
-    const sessionId = await response.json();
+    // The endpoint returns { session_id, scoped_token } — not a bare string.
+    const { session_id: sessionId } = await response.json();
     iframe.src = `${baseUrl}?sid=${sessionId}`;
 } catch (error) {
     console.error('Session creation failed:', error);

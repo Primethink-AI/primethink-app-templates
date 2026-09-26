@@ -5,8 +5,30 @@ PrimeThink is designed around strict separation between groups, role-based contr
 ## Account Security
 
 - **Login** requires the account email and password; the login page is protected by reCAPTCHA.
+- **Passwords must meet a policy** wherever one is set — registration, accepting an invitation, changing your password, and resetting a forgotten one. See [Password requirements](#password-requirements) below.
+- **Repeated failed logins lock the account temporarily.** By default, five failed attempts within fifteen minutes lock sign-in for fifteen minutes.
 - **Email verification** — accounts must verify their email address. Unverified users can log in during a grace period (default 3 days); after that, login is blocked until verification. See [Email Verification](Email-Verification.md).
 - **Sessions** use short-lived signed tokens (JWT) carrying the user, group, and expiration.
+- **Sessions are held per group.** Each group you are signed in to has its own session, renewed in the background before it expires. If one group's session can no longer be renewed, only that group asks you to sign in again — your other groups keep working, and you are signed out of the application entirely only when the last remaining session ends. In a browser, several open tabs share one set of session tokens, so renewing in one tab keeps the others signed in.
+
+### Password requirements
+
+The platform ships with these defaults, and a group can tighten them — where the two differ, the stricter rule applies:
+
+| Rule | Default |
+|------|---------|
+| Minimum length | 12 characters |
+| Maximum length | 72 characters |
+| Required character classes | none required |
+| Minimum strength score | 3 out of 4 |
+| Common passwords | rejected |
+| Passwords containing your own details | rejected |
+
+Strength is estimated rather than counted: a long passphrase of ordinary words can score well, while a short password padded with symbols often does not. The score also drops for anything predictable, so keyboard patterns and dates do not help. Because your name and email address are checked too, a password built from them is refused even if it is long enough.
+
+When a password is rejected, the response names each rule it failed rather than giving a single generic error.
+
+Registration, password reset, and the change-password dialog check the password as you type: each active rule is listed with a tick once you satisfy it, alongside a strength meter. The check is advisory — if it is briefly unavailable the rows go neutral and a note says the password will be checked when you submit, and submitting is never blocked, because the same rules are applied to the request itself.
 
 ## Encryption
 

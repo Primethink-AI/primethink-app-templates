@@ -61,6 +61,7 @@ Press `⌘ /` (Mac) or `⌃ /` (Windows/Linux) at any time to open the **App Key
 |----------|-------------|
 | `⌥ L` | Toggle Location |
 | `⌥ T` | Toggle Audio Replies |
+| `⌥ V` | Toggle Voice Mode |
 | `⌥ B` | Toggle Sidebar |
 | `⌥ A` | Toggle Archived Chats |
 | `⌥ F` | Toggle Starred Chats |

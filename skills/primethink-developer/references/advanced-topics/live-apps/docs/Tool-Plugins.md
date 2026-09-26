@@ -23,6 +23,7 @@ This guide covers how to create tools for PrimeThink agents — both inside the 
   - [6. Verify discovery](#6-verify-discovery)
 - [Plugin Context (PT Services Injection)](#plugin-context-pt-services-injection)
 - [Full External Plugin Example](#full-external-plugin-example)
+- [Reference: the first-party `primethink_admin` plugin](#reference-the-first-party-primethink_admin-plugin)
 - [Creating DB Capabilities for Your Tools](#creating-db-capabilities-for-your-tools)
 - [How Tool Resolution Works at Runtime](#how-tool-resolution-works-at-runtime)
 - [Testing Your Plugin Locally](#testing-your-plugin-locally)
@@ -707,6 +708,22 @@ def test_register_calls_registry():
 
 ---
 
+## Reference: the first-party `primethink_admin` plugin
+
+The platform ships one plugin of its own, and it is the clearest working example of everything above: `primethink_admin`, which exposes PrimeThink's own management surface — tasks and task evaluation, agents, capabilities, chats and chat members, notifications, scheduled jobs, workspaces, collections, directories and document versions, tags, and groups — to an agent as LangChain tools.
+
+It is worth reading as a reference because it uses the same mechanism an external plugin uses, with nothing special reserved for it:
+
+- It is packaged **inside the `primethink-cli` wheel**, behind that project's optional `agent-tools` extra, so the tools and the API client code they call can never drift apart.
+- It declares the ordinary entry point, `primethink_admin = "primethink_agent_tools:register"` under the `primethink.tools` group, and is discovered at startup like any other plugin.
+- It becomes usable the same way: create the capability from the registered tool, then assign that capability to an agent.
+
+Its tools call the PrimeThink API with a per-user token read from PrimeThink settings under the name `ADMIN_PRIMETHINK_API_TOKEN`, so each user's actions run with their own access rather than a shared one.
+
+Deliberately absent: semantic search, uploading or downloading document bytes, messaging and orchestration, and destructive deletes. Those are hot paths, large payloads, or already covered by native capabilities, and should not round-trip through the public API — a useful boundary to copy when deciding what your own plugin should expose.
+
+---
+
 ## Creating DB Capabilities for Your Tools
 
 Every tool group needs a matching `capabilities` row in the database. There are two approaches:
@@ -832,7 +849,7 @@ Any extra keys in `options` are passed through to the MCP config as-is on OpenAI
 ### Running MCP capabilities on Anthropic models
 
 The same capability runs on both OpenAI and direct Anthropic — the stored options are
-translated to each provider's wire format automatically. This does not include AWS Bedrock Claude (`bedrock:...`), which has no hosted MCP connector. Direct Anthropic's MCP
+translated to each provider's wire format automatically. This does not include AWS Bedrock Claude (`bedrock:...`), which has no hosted MCP connector and therefore skips the capability. Direct Anthropic's MCP
 connector is more restrictive, so check four things before pointing an
 MCP-equipped agent at an `anthropic:...` Claude model:
 

@@ -17,8 +17,7 @@ The PrimeThink platform features an intuitive interface organized into distinct 
 - Bottom section includes tools for managing group access
 
 ### Left Sidebar
-- **New Chat Button**: Start conversations and create workspaces
-- **Tasks Management**: Launch predefined chat workflows
+- **Create Button**: Start a chat, task, Live App, or direct message
 - **Filtering Tools**: Sort by chat types, favorites, and virtual assistants
 - **Chat List**: Displays conversations with visual indicators and real-time updates
 

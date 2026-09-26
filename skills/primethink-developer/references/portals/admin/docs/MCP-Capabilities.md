@@ -11,8 +11,10 @@ For the bigger picture of how capabilities fit together, see [Capabilities](Capa
 
     - **OpenAI models** — MCP tools are attached through OpenAI's Responses API.
     - **Direct Anthropic (Claude) models** (`anthropic:...`) — MCP servers are attached through Anthropic's MCP connector. The capability must set an explicit `require_approval: "never"` and can only authenticate with a Bearer token — see [Running on Anthropic (Claude) models](#running-on-anthropic-claude-models).
-    - **AWS Bedrock Claude models** (`bedrock:...`) — Bedrock does not provide Anthropic's hosted MCP connector. Do not attach an MCP capability to a Bedrock agent; the provider can reject requests containing hosted-MCP configuration.
+    - **AWS Bedrock models** (`bedrock:...`) — Bedrock does not provide Anthropic's hosted MCP connector, including for Claude on Bedrock. MCP capabilities are **skipped** and a warning is logged; the hosted-MCP configuration is never sent to Bedrock.
     - **Any other provider** (Gemini, Groq, DeepSeek, Mistral, …) — MCP capabilities are **skipped** and a warning is logged; the rest of the agent is unaffected.
+
+    Whether hosted MCP is wired at all is decided from the model catalog rather than from the model class, so Claude on Bedrock is correctly treated as unsupported even though it shares Anthropic's implementation. The gate is fail-closed: a model the platform cannot identify in the catalog also skips MCP.
 
     The same capability works on OpenAI and direct Anthropic — nothing in the options changes when you swap between those providers; the translation happens automatically. Bedrock-hosted Claude is a separate provider and does not support hosted MCP.
 
@@ -57,6 +59,12 @@ The built config always includes `"type": "mcp"`.
 !!! warning "Avoid stray whitespace in `server_url`"
     A leading or trailing space in `server_url` causes OpenAI's MCP connector to fail with HTTP 424 ("failed to retrieve tool list"), which previously surfaced to users as an empty or blank response. PrimeThink now trims `server_url` (and `server_label`/`require_approval`) automatically, but it's still good practice to keep the value clean.
 
+### One label per agent
+
+A model provider rejects a request carrying two MCP entries with the same `server_label`, and it rejects the whole request — so an agent holding two capabilities with the same label could not answer anything at all, not even a greeting. This is easy to do by accident: two copies of the same capability whose configurations differ only in some detail you cannot see, such as a stray space in the URL.
+
+PrimeThink now keeps the first entry for a given label and drops the later duplicates when it builds an agent's tool list, so the agent keeps working. Only one of the two configurations is in effect, though, and which one is not something you should rely on — if two capabilities share a label deliberately, give them distinct labels, and if one is a leftover, remove it from the agent.
+
 ## Settings placeholders (`${SETTING_NAME}`)
 
 Never hard-code tokens. Any string value in `options` can contain `${SETTING_NAME}` placeholders, resolved at runtime from your user/group settings.
@@ -78,7 +86,7 @@ The value is then available as `${HA_REMOTE_TOKEN}` in the capability's options.
 ## Running on Anthropic (Claude) models
 
 !!! important "Direct Anthropic only"
-    This section applies to `anthropic:...` models. AWS Bedrock Claude models use the `bedrock:...` prefix and do not provide Anthropic's hosted MCP connector. Do not attach MCP capabilities to Bedrock agents because the provider can reject requests containing hosted-MCP configuration.
+    This section applies to `anthropic:...` models. AWS Bedrock Claude models use the `bedrock:...` prefix and do not provide Anthropic's hosted MCP connector, so MCP capabilities are skipped on them with a logged warning rather than being sent to the provider.
 
 The same MCP capability that runs on OpenAI also runs on direct Anthropic — PrimeThink translates the options into Anthropic's MCP-connector format at bind time (`server_label` → `name`, `server_url` → `url`, `allowed_tools` → `tool_configuration.allowed_tools`, and the `Authorization` Bearer token → `authorization_token`). Anthropic's connector is more restrictive than OpenAI's, so a capability must meet four conditions to attach on a Claude model:
 
@@ -152,7 +160,7 @@ Minimal MCP capability:
 
 Rules to remember:
 
-- **OpenAI and direct Anthropic models only** — do not configure hosted MCP on AWS Bedrock Claude; MCP capabilities are skipped on other unsupported providers.
+- **OpenAI and direct Anthropic models only** — hosted MCP is skipped, with a logged warning, on AWS Bedrock and every other unsupported provider.
 - On Anthropic, `require_approval: "never"` is mandatory (fail-closed) and only a Bearer `Authorization` header is sent — custom headers are dropped.
 - No stray whitespace in `server_url`.
 - Secrets → `${SETTING_NAME}` placeholders in `headers`, defined in settings first.

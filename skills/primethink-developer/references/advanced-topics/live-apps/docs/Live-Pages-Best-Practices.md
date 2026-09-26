@@ -1732,8 +1732,8 @@ function extractDownloadUrl(result) {
     if (result?.result?.documents?.[0]?.download_url) return result.result.documents[0].download_url;
     if (result?.documents?.[0]?.download_url) return result.documents[0].download_url;
     if (result?.download_url) return result.download_url;
-    // Fallback: construct URL from UUID using pt._getUrl() (never hardcode the domain)
-    if (result?.uuid) return pt._getUrl(`/api/v1/documents/uuid/${result.uuid}/download/stream`);
+    // Fallback: build the URL from the document's uuid
+    if (result?.uuid) return pt.documentUrl(result.uuid);
     return null;
 }
 

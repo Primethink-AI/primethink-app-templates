@@ -14,7 +14,7 @@ A collection groups related documents together and can be attached to one or mor
 | `name` | string | Collection name |
 | `description` | string | Optional description |
 | `uuid` | string | Collection UUID |
-| `type` | string | Collection type (e.g., `"collection"`) |
+| `type` | string | `"collection"` (documents), `"skill"`, `"external_source"`, or `"db"` for a [DB Collection](/admin/Live-Apps-State-Management/#sharing-data-across-chats-db-collections), a shared entity store for Live Apps |
 | `public` | boolean | Whether the collection is publicly accessible to the group |
 | `indexed` | boolean | Whether the collection is indexed for semantic search |
 | `extra` | object\|null | Optional JSON object for custom metadata |
@@ -94,7 +94,7 @@ curl -X POST "https://api.primethink.ai/collections?name=My%20Collection&indexed
 **Query Parameters:**
 - `name` (string, required): Collection name
 - `description` (string, optional): Collection description
-- `type` (string, optional): Collection type (default: `"collection"`)
+- `type` (string, optional): Collection type: `collection` (default), `skill`, `external_source`, or `db` to create a [DB Collection](/admin/Live-Apps-State-Management/#sharing-data-across-chats-db-collections)
 - `public` (boolean, optional): Whether collection is public (default: `false`)
 - `indexed` (boolean, optional): Whether to index for search (default: `false`)
 

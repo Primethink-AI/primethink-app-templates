@@ -94,12 +94,49 @@ When a message is processed, the following Socket.IO events are emitted:
 
 1. `message` - User message created (id: 18695)
 2. `message` - AI message placeholder created (id: 18696)
-3. `stream_reasoning_token` - Reasoning/thinking tokens (if model supports it)
-4. `stream_partial_token` - Response tokens as they're generated
-5. `stream_completed` - Streaming finished for task
-6. `message` - Final AI message with complete content
+3. `agent_responding` - An agent has started generating a response
+4. `stream_reasoning_token` - Reasoning/thinking tokens (if model supports it)
+5. `stream_voice` - Short scripts to read aloud, only when the message was sent with `voice_mode=true`; may arrive before, between, or after the response tokens
+6. `stream_partial_token` - Response tokens as they're generated
+7. `stream_completed` - Streaming finished for task
+8. `message` - Final AI message with complete content
 
 Both `waitForMessageReceived` and `onMessageReceived` wait for `stream_completed` and then deliver the final message.
+
+### `stream_voice`
+
+When a message is sent with `voice_mode=true`, the agent can speak alongside its written answer by calling its `speak` tool, and each call emits one `stream_voice` event:
+
+```javascript
+socket.on('stream_voice', (data) => {
+  // data: { task_id, chat_id, chat_uuid, ai_message_id, agent_id, text, seq }
+  enqueueSpeech(data.seq, data.text);
+});
+```
+
+The text is plain — markdown, links, lists, and code are stripped — and capped at roughly 600 characters, about forty seconds of speech, cut at a sentence boundary. `seq` is the call's index within the turn, so clips can be queued in order and duplicates dropped after a reconnect, and `agent_id` identifies whose configured voice to use.
+
+This is a fire-and-forget side channel: it runs in parallel with the written reply, the agent decides when there is something worth saying, and nothing is persisted. A client without a socket connection can read the same scripts from the `voice` field of the streaming poll endpoint, `GET /api/v1/chats/streaming/{task_id}`.
+
+### `agent_responding`
+
+Emitted once, when an agent begins a response. Its payload carries `chat_id`, `chat_uuid`, `task_id`, `agent_id`, and `ai_message_id`:
+
+```javascript
+socket.on('agent_responding', (data) => {
+  showBusyIndicator(data.ai_message_id);
+});
+```
+
+There is deliberately no matching "stopped" event: clear the indicator for an `ai_message_id` when `stream_completed`, `stream_error`, or `stream_cancelled` arrives for it. Because the start event is keyed by `ai_message_id`, it does not matter if a replayed start arrives after the completion of the same response.
+
+A client that missed the event — after a page refresh, for example — can ask directly instead:
+
+```
+GET /api/v1/chats/{chat_id}/agent_responding
+```
+
+It answers a plain `true` or `false` for the chat, from the same record that drives the event, and accepts the chat's UUID or numeric id. The event is also replayed to a socket when it joins a chat room, so a reconnecting client sees any response already in flight without the other members receiving a duplicate.
 
 ## API Reference
 

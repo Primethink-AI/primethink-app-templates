@@ -13,6 +13,17 @@ Topics:
 - Agent commands and syntax
 - Best practices for agent interaction
 
+## Archiving an Agent
+
+An agent you no longer want offered, but do not want to lose, can be **archived**. Archiving hides the agent from the agent list without deleting it or touching the chats it already belongs to, and it can be reversed at any time.
+
+Archived agents are left out of the agent list by default. Ask for them explicitly to see them — through the app's archived filter, or by passing `archived=true` when listing agents through the API, which returns active and archived agents together. An agent's own record now carries an `archived` flag alongside its status.
+
+In the app, **Archive** and **Unarchive** sit on the agent's own menu and ask you to confirm before acting.
+
+!!! note "For integrators"
+    Archiving used to be expressed as an agent *status*. It is now a separate flag, so an agent is archived and active at the same time rather than losing its status. The old `status=archived` and `status=all` filters still work and are still translated for you, but prefer the `archived` flag in new code.
+
 ## Member-Agent Delegation
 
 When several AI assistants are members of the same chat, the active assistant can use the other assistants as specialist subagents. It delegates a matching unit of work privately, waits for the result, and incorporates that result into its own response.

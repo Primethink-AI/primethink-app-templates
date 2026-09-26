@@ -64,6 +64,8 @@ The PrimeThink API provides a complete set of operations for managing entities a
 | **Document Create** | `pt.saveDocument(filename, format, mimetype, content, folder, attachmentMode?)` | Create and save document | Fast |
 | **Document Delete** | `pt.deleteDocuments(documentIds)` | Bulk delete documents from chat | Fast |
 | **Document Download** | `pt.downloadDocuments(documentIds, asZip)` | Download one or more documents | Fast |
+| **Document URL** | `pt.documentUrl(documentUuid)` | Build the URL for displaying or downloading a stored document | Instant (no request) |
+| **DB Collection** | `pt.db(nameOrId)` | Scoped CRUD client for a DB Collection attached to the chat | Instant (resolved on first call) |
 | **Directory Navigation** | `pt.listDirectory(path)` | List contents of a directory path | Fast |
 | **Collections List** | `pt.listCollections()` | Get all collections in chat | Fast |
 | **Collections Docs** | `pt.getDocumentsInCollections(collectionIds)` | Get documents in specified collections | Fast |
@@ -85,6 +87,22 @@ List entities with optional server-side filtering, pagination, and multiple enti
 - `page`: Page number for page-based pagination (1-indexed, mutually exclusive with offset)
 - `pageSize`: Items per page for page-based pagination (mutually exclusive with limit)
 - `returnMetadata`: Set to `true` to return pagination metadata along with entities
+
+!!! warning "There is no sort option — do not trust the row order"
+    `pt.list()` takes exactly the parameters above. There is **no** `orderBy`, `sortBy` or equivalent, and no way to ask the server for a particular order. Sorting is always something your app does after the rows arrive.
+
+    The order rows come back in is therefore not a guarantee and must not be treated as one. Anything that depends on sequence — a streak, a "most recent" entry, a running total, a first-and-last comparison — must sort explicitly on a field you control, such as a timestamp or an id:
+
+    ```javascript
+    const rows = await pt.list({ entityNames: ['reading'] });
+
+    // Sort explicitly. Never assume the array arrived in order.
+    const byNewest = [...rows].sort(
+        (a, b) => new Date(b.data.recorded_at) - new Date(a.data.recorded_at)
+    );
+    ```
+
+    Note the consequence for pagination: because ordering is client-side, paging through a large set and sorting each page sorts only *within* each page. When order matters across the whole set, fetch what you need and sort the combined result.
 
 **Basic Usage:**
 ```javascript
@@ -1313,7 +1331,7 @@ pt.addMessage(formOrFormData, message, options?)
 | `formOrFormData` | `HTMLFormElement` \| `FormData` | (Mode 2) Form or FormData with files |
 | `message` | `string` | (Mode 2) Message text (can be empty) |
 | `options` | `object` | Optional configuration |
-| `options.hidden` | `boolean` | Hide message from UI (default: `false`) |
+| `options.hidden` | `boolean` | Hide the message from the chat UI (default: `false`). **This hides the assistant's reply as well as your message** — see below |
 | `options.awaitResponse` | `boolean` | Wait for AI response (default: `false`) |
 | `options.awaitResponseTimeout` | `number` | Timeout in milliseconds when `awaitResponse: true` (default: `120000` = 2 minutes). For long-running queries, increase this value (e.g., `300000` for 5 minutes). |
 | `options.folder` | `string` | Target folder path where file attachments will be stored (e.g., `'reports/2024'`, `'invoices/january'`). Only applies when uploading files. |
@@ -1405,6 +1423,13 @@ async function completeTask(taskId) {
     await pt.addMessage(`Task "${task.data.text}" has been completed!`);
 }
 ```
+
+!!! warning "`hidden: true` hides the reply too, which makes a stalled stage invisible"
+    It is natural to read `hidden` as "do not show my prompt". It also hides the **assistant's response** to that prompt. Both messages are recorded in the chat and neither is displayed.
+
+    That is usually what you want for an app-driven prompt the user should not see. The cost is diagnostic: when you drive a multi-stage flow with hidden messages and one stage stalls or fails, the chat shows nothing at all — no prompt, no reply, no error. There is nothing on screen to explain why the app stopped.
+
+    Build your own visibility for anything multi-stage: record each stage in ChatDB as it progresses, and surface progress and failure in your own interface rather than relying on the transcript. While developing, running the same flow with `hidden: false` is often the quickest way to see what actually came back.
 
 **Messages with files:**
 ```javascript
@@ -2223,6 +2248,7 @@ pt.action("get_chat_messages", options)
 | `aggregated_reactions` | `object` | Emoji reactions on the message |
 | `replying_to_message` | `object\|null` | Nested parent message (if this is a reply) |
 | `reasoning_steps` | `array` | AI reasoning steps (if applicable) |
+| `streaming_task_id` | `string\|null` | Set while this message is still being generated, `null` otherwise. Its value is the `{uuid}:{message_id}` task id used by the streaming socket events, so a client that reloads mid-response can tell the message is in flight and reconnect to the stream. |
 | `chat_uuid` | `string` | UUID of the chat |
 
 **Usage Examples:**
@@ -2345,10 +2371,12 @@ When a message is processed, the following Socket.IO events are emitted:
 
 1. `message` - User message created (id: 18695)
 2. `message` - AI message placeholder created (id: 18696)
-3. `stream_reasoning_token` - Reasoning/thinking tokens (if model supports it)
-4. `stream_partial_token` - Response tokens as they're generated
-5. `stream_completed` - Streaming finished for task
-6. `message` - Final AI message with complete content
+3. `agent_responding` - An agent has started generating a response (see [Message Handling](primethink_js_message_received.md#agent_responding))
+4. `stream_reasoning_token` - Reasoning/thinking tokens (if model supports it)
+5. `stream_voice` - Scripts to read aloud when the message was sent with `voice_mode=true` (see [Message Handling](primethink_js_message_received.md#stream_voice))
+6. `stream_partial_token` - Response tokens as they're generated
+7. `stream_completed` - Streaming finished for task
+8. `message` - Final AI message with complete content
 
 The `onMessageReceived` handler waits for `stream_completed` and then delivers the final message.
 
@@ -3003,6 +3031,31 @@ pt.uploadFiles(formOrFormData, folder?, documentName?, attachmentMode?)
 | `documentName` | `string?` | Optional custom name for the uploaded file. If not provided, the original filename is used. Useful for single file uploads where you want to rename the document. |
 | `attachmentMode` | `string?` | Optional attachment mode (`'archived'`, `'search'`, `'attached'`, or `'context'`). Controls how the document is treated by the AI. See [Attachment Modes](#attachment-modes) below. Defaults to `'archived'` if not specified. |
 
+!!! danger "A document is identified by its name within its folder — a repeat name replaces the file"
+    Uploading a file under a name that already exists in the same folder does not create a second document. It **replaces the existing file in place**, as a new version of it.
+
+    This is easy to trip over with photographs, and it loses data when you do. Phone cameras frequently hand every capture the same filename — an iPhone supplies `image.jpg` every time — so a user attaching three photos in one go can end up with **one** document, each upload having overwritten the last. Nothing reports an error: the call succeeds and the app looks like it worked.
+
+    If a user can supply more than one file, give each upload a name you generate:
+
+    ```javascript
+    // Wrong: three captures from a phone are all called image.jpg
+    await pt.uploadFiles(form, 'listings/42');
+
+    // Right: a name that cannot collide
+    for (const [i, file] of [...files].entries()) {
+        const data = new FormData();
+        data.append('files', file);
+
+        const extension = file.name.includes('.') ? file.name.split('.').pop() : 'jpg';
+        const unique = `photo-${Date.now()}-${i}.${extension}`;
+
+        await pt.uploadFiles(data, 'listings/42', unique);
+    }
+    ```
+
+    Using a folder per subject helps organise files but does **not** solve this on its own — the collision is between two files with the same name in the *same* folder, which is exactly what a loop over one user's selection produces.
+
 **Returns:** Promise that resolves to an object containing:
 
 ```typescript
@@ -3614,12 +3667,39 @@ async function loadDocumentWithRetry(docId, maxRetries = 5) {
 Create and save content as a document in the chat.
 
 **Parameters:**
-- `filename` (string, required): Filename with extension
+- `filename` (string, required): Filename with extension, and nothing else. It must be a plain basename such as `report.pdf` — see [Filename must be a basename](#filename-must-be-a-basename) below.
 - `format` (string, required): Format type - "TXT", "MD", "HTML", "DOCX", "PDF", "CSV", "XLSX", or "CUSTOM"
 - `mimetype` (string, required): MIME type (e.g., "text/plain", "application/pdf")
 - `content` (string, required): Document content
-- `folder` (string, optional): Destination folder path (e.g., "reports", "exports/monthly"). The folder is created automatically if it does not exist.
+- `folder` (string, optional): Destination folder path (e.g., "reports", "exports/monthly"). Missing folders — including every level of a nested path — are created automatically.
 - `attachmentMode` (string, optional): Controls how the document is treated by the AI (`'archived'`, `'search'`, `'attached'`, or `'context'`). See [Attachment Modes](#attachment-modes) below. Defaults to `'archived'` if not specified.
+
+#### Filename must be a basename
+
+The destination path belongs in `folder`; `filename` is only the name of the file. A path-shaped filename is **rejected rather than split**, so that a malformed name can never quietly become a document whose display name contains slashes.
+
+```javascript
+// WRONG — throws INVALID_DOCUMENT_FILENAME and creates nothing
+await pt.saveDocument('specs/diagram/flow.mmd', 'CUSTOM', 'text/plain', content);
+
+// RIGHT — basename in filename, path in folder
+await pt.saveDocument('flow.mmd', 'CUSTOM', 'text/plain', content, 'specs/diagram');
+```
+
+A filename is rejected when it is empty or only whitespace, contains `/` or `\`, is `.` or `..`, starts with a drive letter such as `C:`, or contains control characters. `pt.saveDocument()` throws `INVALID_DOCUMENT_FILENAME: <message>` before the request is sent; the same rule is enforced server-side, which answers with HTTP 400 and a structured `detail`:
+
+```json
+{
+  "detail": {
+    "code": "INVALID_DOCUMENT_FILENAME",
+    "message": "filename must be a basename without folder separators; pass the destination path using the folder parameter",
+    "reason": "filename contains a folder separator",
+    "filename": "specs/diagram/flow.mmd"
+  }
+}
+```
+
+Errors raised from a structured `detail` carry the code on the thrown error, so you can branch on `error.code === 'INVALID_DOCUMENT_FILENAME'`.
 
 **Storage Locations:**
 
@@ -4400,6 +4480,106 @@ async function handleDownload(docIds) {
     }
 }
 ```
+
+### pt.documentUrl(documentUuid)
+
+Build the URL that displays or downloads a stored document. Use it anywhere a URL belongs — an `<img src>`, an `<a href>`, a CSS `background-image`.
+
+This is the supported way to show a stored image in a Live App. **Never hand-build the path** and never call `pt._getUrl()` — a leading underscore marks a private method whose path can change without notice.
+
+**Parameters:**
+
+- `documentUuid` (string, required): the document's **uuid** — not its integer `id`
+
+**Returns:** the absolute URL as a string. It is built locally, so there is no request to await and nothing to catch.
+
+**Usage:**
+
+```javascript
+// Show an uploaded image
+const result = await pt.uploadFiles(form);
+const { uuid } = result.attachments[0].document;
+
+const img = document.createElement('img');
+img.src = pt.documentUrl(uuid);
+img.alt = 'Uploaded photo';        // always give an image a text alternative
+container.appendChild(img);
+```
+
+```javascript
+// Link to a generated document
+const link = document.createElement('a');
+link.href = pt.documentUrl(uuid);
+link.textContent = 'Download the report';
+```
+
+Where to find a uuid: on an upload response (`result.attachments[0].document.uuid`), from [`pt.getDocumentInfo()`](#ptgetdocumentinfodocumentpath) or [`pt.getDocumentInfoById()`](#ptgetdocumentinfobyiddocumentid), or in the rows returned by [`pt.getDocumentsInCollections()`](#ptgetdocumentsincollectionscollectionids).
+
+!!! warning "Pass the uuid, not the id"
+    A document has both an integer `id` and a `uuid`, and this method needs the uuid. Passing anything that is not a non-empty string throws immediately with a message saying so, rather than producing a URL that appears to work and then 404s when the browser tries to load the image.
+
+!!! danger "A document uuid is a capability — treat it like a signed URL"
+    This URL streams the document **without requiring the viewer's session**. Anyone who has the uuid can fetch the file. That is what makes the URL usable directly as an `<img src>`, and it is also the whole of the access control.
+
+    So: do not put a uuid anywhere you would not put the file itself. Do not log one, do not paste one into a public page or a shared ticket, and do not hand one to a user who is not entitled to the document. When a Live App builds a list of images, it is the app's own query that decides which documents that user should see — the URLs it emits carry no further check.
+
+**Related:** [`pt.downloadDocuments()`](#ptdownloaddocumentsdocumentids-aszip) triggers a download of documents by numeric id through the authenticated path, and is the better choice for a bulk or ZIP download. `pt.documentUrl()` is for putting a single document at the end of a URL.
+
+### pt.db(nameOrId)
+
+By default the CRUD methods on `pt` read and write the current chat's own entity store. A **DB Collection** is a separate entity store that can be attached to a chat, so several chats — several apps — can share one set of data. `pt.db()` returns a client scoped to one of those collections.
+
+!!! info "A DB Collection is not a document collection"
+    A DB Collection holds entities, not files. It is a collection of type `db`: it shares the collection model and the attach mechanics with the document collections used for semantic search, but upload, indexing and search do not apply to it. For when to use one, how to create and attach it, cross-chat events, agent access and design trade-offs, see [Sharing Data Across Chats: DB Collections](Live-Apps-State-Management.md#sharing-data-across-chats-db-collections).
+
+**Parameters:**
+
+- `nameOrId` (string or number, required): the collection's **name**, or its **numeric id**
+
+**Returns:** a client exposing the same CRUD methods as `pt` itself — `list()`, `get()`, `add()`, `edit()`, `batchAdd()`, `batchEdit()`, `delete()`, `batchDelete()` — each targeting that collection instead of the chat's own store.
+
+It returns **synchronously** and resolves the collection on the first CRUD call, so you can create it once at module scope:
+
+```javascript
+const db = pt.db('project-db');
+
+const issues = await db.list({ entityNames: ['issue'] });
+await db.add('issue', { title: 'Bug report', status: 'open' });
+```
+
+#### Targeting by name or by id
+
+```javascript
+pt.db('project-db');   // by name
+pt.db(42);             // by id
+```
+
+A name is the readable choice and is usually what you want. Reach for the id in the two cases where a name is not good enough:
+
+- **Two attached collections share a name.** A name is then ambiguous; an id is not.
+- **The collection may be renamed.** An id keeps working; a name stops resolving the moment someone renames the collection.
+
+Ids come from the list of collections attached to the chat:
+
+```javascript
+const attached = await pt.action('db_list_collections', {});
+// each entry carries collection_id, name, access_mode and attached_at
+```
+
+A name must be a non-empty string and an id must be a positive integer; anything else throws immediately.
+
+!!! warning "If you send both a name and an id, they must agree"
+    The REST and action payloads underneath accept `collection_name` and `collection_id` together. When both are present they must identify the **same** collection — a mismatched pair does not silently prefer one of them, it fails to resolve and reports the collection as not attached, listing the collections that are. Send one or the other unless you have both from the same source and want the pair checked.
+
+**When a collection cannot be used:**
+
+- Not attached to this chat, not active, or not a DB collection → an error naming what you asked for, and listing the DB collections that *are* attached with their names and ids, so the correct reference is in the message.
+- Attached **read-only** → reads succeed and any write is refused. This applies identically whether you targeted the collection by name or by id; an id is a more precise reference, not a way around the access mode.
+
+Behaviour that differs from the chat's own store:
+
+- **Events reach every attached chat.** A write emits a change event to all chats the collection is attached to, and `pt.onEntityChanged()` receives it with a `collection_id` field. See [Real-time sync across chats](Live-Apps-State-Management.md#real-time-sync-across-chats).
+- **Boolean equality and non-numeric range filters do not yet work** on a DB Collection. See the [filter warning](Live-Apps-State-Management.md#what-behaves-the-same-as-the-chat-database).
 
 ### pt.listCollections()
 

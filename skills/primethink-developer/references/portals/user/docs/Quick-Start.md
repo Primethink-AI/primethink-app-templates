@@ -75,8 +75,7 @@ This vertical bar allows you to:
 
 ### Left Sidebar
 The left sidebar contains:
-- New Chat button for starting conversations
-- Tasks Management for workflow automation
+- Create button for starting a chat, task, Live App, or direct message
 - Filtering tools for organizing chats
 - List of active conversations
 

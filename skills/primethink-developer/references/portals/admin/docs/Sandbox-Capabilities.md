@@ -2,10 +2,10 @@
 
 A **Sandbox capability** (`type: "sandbox"`) lets an agent run shell commands in an isolated Linux shell sandbox. It's the command-line twin of [Computer Use](Computer-Use-Capabilities.md): no screen — just command execution, with `stdout`/`stderr` and exit codes. Use it for tasks that need arbitrary command execution or file processing: data conversion, file wrangling, CLI tools, or calling an API with `curl`.
 
-Each Sandbox capability defines **one named automation** that becomes a single tool the model can call. The sandbox is an isolated Ubuntu environment backed by [Daytona](https://www.daytona.io/); its filesystem and installed packages persist across calls within a single run.
+Each Sandbox capability defines **one named automation** that becomes a single tool the model can call. The sandbox is an isolated Ubuntu environment, run on whichever [sandbox backend](Sandbox-Execution.md) your deployment uses; its filesystem and installed packages persist across calls within a single run.
 
 !!! note "Not the same as the `sandbox_exec` tool"
-    This page is about the **`type: "sandbox"` capability** — a *pre-configured, named automation* you attach to an agent. That's different from [Sandbox Execution](Sandbox-Execution.md), which documents the built-in `sandbox_exec` tool: a *general-purpose* shell tool the assistant reaches for ad hoc during conversation. Both run on Daytona, but one is a fixed automation you define and the other is open-ended.
+    This page is about the **`type: "sandbox"` capability** — a *pre-configured, named automation* you attach to an agent. That's different from [Sandbox Execution](Sandbox-Execution.md), which documents the built-in `sandbox_exec` tool: a *general-purpose* shell tool the assistant reaches for ad hoc during conversation. Both run on the same sandbox backend, but one is a fixed automation you define and the other is open-ended.
 
 For the bigger picture of how capabilities fit together, see [Capabilities](Capabilities.md).
 
@@ -132,7 +132,7 @@ Failures are returned to the model as text (so it can react), never raised:
 | Condition | Returned to the model |
 |-----------|-----------------------|
 | Unresolved `${SETTING}` | `Sandbox task could not start: {detail}` |
-| Daytona unavailable | `Sandbox task failed: {detail}` (logged) |
+| Sandbox backend unavailable | `Sandbox task failed: {detail}` (logged) |
 | Other failure | `Sandbox task failed: {detail}` |
 
 The sandbox session is always closed at the end of the run. (A non-zero exit code is *not* an error — it's returned in `stdout` so the agent can diagnose and retry.)

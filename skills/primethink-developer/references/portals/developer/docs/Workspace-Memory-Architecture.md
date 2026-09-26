@@ -122,8 +122,56 @@ This is why the leakage safeguard matters: the **type descriptions** the assista
 
 ---
 
+## Supersession: memory as a history, not a cell to overwrite
+
+A memory is never silently rewritten when the fact behind it changes. Each row carries a **status**:
+
+| Status | Meaning |
+|---|---|
+| `active` | The current statement. This is what retrieval, page summaries and the assistant work from. |
+| `superseded` | A statement that was true once and has since been replaced. Kept as history. |
+
+A superseded row points at the memory that replaced it and records when, and optionally why, the change happened. This produces a flat chain: every superseded row points directly at the currently active statement, so reading history is a single query rather than a walk.
+
+**What each operation does**
+
+| Operation | Effect on history |
+|---|---|
+| Change a memory's **text** | The old row becomes `superseded` and a new `active` row carries the new statement. |
+| Change only a memory's **priority** | Edited in place. No history row is created — a priority change is not a change of fact. |
+| **Merge** during synthesis | Housekeeping: history belonging to the merged-away rows is re-pointed at the surviving result, so no chain is orphaned. |
+| **Delete** ("forget") | A hard delete. The row **and its history** are removed. This is the only operation that destroys the trail. |
+
+**Retrieval.** Superseded rows are excluded by default everywhere — listings, semantic search, prompt injection and page summaries. They are never injected as standalone facts, because a replaced statement asserted on its own is simply wrong. They surface in two ways only: as a dated one-hop note attached to the statement that replaced them (`[previously, until DATE: "…"]`), and through a deliberate history lookup or an explicit request to include them.
+
+**Retention.** Superseded rows that have aged past the retention window without being recalled are hard-deleted by the nightly job, which keeps the history bounded. The default window is 365 days and is set per deployment.
+
+### Rule provenance
+
+The memory types that install a standing rule — `constitution`, `ai_personal`, `agent_constitution` and `workspace_constitution` — are treated as trusted input in every subsequent conversation, which makes them the highest-value target for prompt injection. Saving or changing one therefore requires a **verbatim quote from the user's own message**: the assistant must supply the words that state the rule, and they are checked against the message the user actually wrote, normalised for case and punctuation and subject to a minimum length.
+
+A rule that can only be sourced from a document, a web page, an image or a tool result fails this check and is refused. Content the user merely shared with the assistant cannot install a rule; only content the user authored can. Non-rule memory types are unaffected.
+
+### REST surface
+
+Against `/api/v1/memories`:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /` and `GET /search` | Accept `include_superseded` (default `false`). Leave it off for current state; turn it on to see the history alongside it. |
+| `GET /{id}/history` | The rows a memory replaced, most recently replaced first. Empty for a memory that never changed. |
+| `POST /{id}/supersede` | Replace a memory with a new statement, keeping the old one as history. Takes the replacement `text`, and optionally a `priority` and a `reason`. Returns the new memory. Contrast with `PUT /{id}`, which edits in place and creates no history. |
+
+Memory payloads carry four supersession fields: `status`, `superseded_by_id`, `superseded_at` and `supersession_reason`. Read access to history follows the same rule as reading the memory itself — authorship for personal memories, workspace access for shared ones — and superseding requires the same write rights as editing.
+
+---
+
 ## Lifecycle and maintenance
 
+* **Pages** — memories are grouped into named pages, one per subject, within categories (`you`, `topic`, `area`, `people`, plus any a group adds). Atomic memories stay the source of truth: a page is a view over the memories filed under it, and a page is never embedded or retrieved as a unit. A page carries a derived `summary`, a `summary_stale` flag, and a user-owned `notes` field that synthesis never touches. Personal pages are scoped to a user; shared pages are scoped to a workspace, and are removed with it.
+* **Nightly synthesis** — a scheduled job maintains each user scope and then each workspace scope: it files memories that have no page yet, merges pages that describe the same entity, removes near-duplicate bullets, resolves contradictions by freshness — superseding the outdated bullet rather than deleting it — applies decay to generic memories, rebuilds the summaries of pages whose bullets changed, deletes pages left empty, and retires supersession history that has aged past the retention window. Routing happens in this batch rather than at write time, so a memory written during the day is searchable and injected immediately but unfiled until the next run.
+* **Prompt placement** — the stable part of memory (profile and preference pages, the agent constitution, workspace pages, and an index of page titles) is injected with the other per-chat-stable context, while query-dependent recalled memories are injected at the tail of the system prompt. Keeping the volatile block last stops it invalidating the cacheable prefix in front of it.
+* **Managing pages** — pages and categories are readable and writable over the API (list, create, read, update, delete, and an explicit summary rebuild), scoped to the caller's user or workspace. Summaries are derived, so write to bullets and let a rebuild produce the summary rather than storing prose in it.
 * **Deletion** — when a workspace is deleted, its workspace memories are removed with it, and the shared knowledge store for that workspace is cleared so no orphaned data remains.
 * **Reindexing** — a workspace's shared knowledge can be rebuilt from its stored memories if search results ever drift, mirroring the personal-memory reindex described in the [Memory guide](/Memory/#viewing-and-managing-memories).
 

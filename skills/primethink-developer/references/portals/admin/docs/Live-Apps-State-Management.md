@@ -24,6 +24,22 @@ PrimeThink Live Apps have access to a chat-scoped database via the `pt` API. Thi
 - **Generous storage** - Entity data comfortably holds typical app state; avoid storing large blobs (e.g. base64 images) in entities
 - **Queryable** - Use filters to find specific data
 
+The chat database belongs to **one chat**. When several chats or apps must work on the same records, use a [DB Collection](#sharing-data-across-chats-db-collections) instead. The next section explains how to choose.
+
+---
+
+## Choosing Where Data Lives
+
+PrimeThink has three places to keep an app's data. Two of them are called "collections", but they are different things.
+
+| Store | Accessed with | Holds | Use it for |
+|-------|---------------|-------|------------|
+| **Chat database** | `pt.list()`, `pt.add()`, … | Structured entities, scoped to one chat | Everything that belongs to one app instance or conversation: per-run work, the records of a chat launched from a task, UI and view state, per-user preferences |
+| **DB Collection** | `pt.db(nameOrId).list()`, … | Structured entities, in a store that can be attached to many chats | Records that several chats or apps must share, such as an intake app and a dashboard over the same cases, or reference data many apps read |
+| **Document collection** | `pt.listCollections()`, `pt.searchDocuments()`, the Collections page | Files and text, indexed for semantic search | Unstructured knowledge the AI retrieves (RAG) |
+
+Start with the chat database. Move a set of records to a DB Collection only when a second chat genuinely needs to read or write the same records. Separate copies of similar data do not need one. Never use a document collection as a database: it has no entity CRUD, and its search is semantic, not exact.
+
 ---
 
 ## Pattern 1: Simple State Persistence (Recommended)
@@ -308,6 +324,128 @@ Only an explicit reset action should delete the application's rows and seed mark
 
 ---
 
+## Sharing Data Across Chats: DB Collections
+
+A **DB Collection** is an entity store that lives outside any single chat. It is a collection of type `db`, and it holds entities (not documents). You attach it to every chat that needs it. Each chat's Live App and AI agent then read and write the **same records**, and changes reach all of those chats in real time.
+
+```javascript
+const cases = pt.db('support-cases');   // resolved on the first call
+
+await cases.add('case', { title: 'Login fails on iOS', status: 'open' });
+const open = await cases.list({ entityNames: ['case'], filters: { status: 'open' } });
+```
+
+The client and the targeting rules are documented in the [`pt.db()` reference](Data-Management-API.md#ptdbnameorid).
+
+### How it differs from a document collection
+
+A DB Collection shares the collection model with document collections. It has an id, a name, an owner and a group, and it is attached to chats in the same way. What it stores is different:
+
+- **Entities, not files.** Upload, indexing and semantic search do not apply. `indexed` has no effect on it, and semantic search finds nothing in it.
+- **It appears in collection listings.** `pt.listCollections()` returns every collection attached to the chat, DB Collections included. Check each entry's `type` (`"db"` for a DB Collection) if you only want document collections. To list only the DB Collections attached to the chat, together with their access mode, use `pt.action('db_list_collections', {})`.
+
+### Lifecycle
+
+**Create.** You create a DB Collection through the collections REST API with `type=db`:
+
+```bash
+curl -X POST "https://api.primethink.ai/api/v1/collections?name=support-cases&type=db" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Creating one needs the same permission as any collection: `create_private_collections`, plus `create_group_collections` to make it public to the group. The Collections page in the app does not offer a DB type yet.
+
+**Attach.** You attach it to a chat like any other collection:
+
+```bash
+curl -X POST "https://api.primethink.ai/api/v1/chats/$CHAT_ID/collections/$COLLECTION_ID" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+This needs `associate_collection_in_chat` or `manage_workspace_collections`, and you must be a member of the chat.
+
+**Tasks.** A collection attached to a task is copied onto every chat launched from that task, and onto the chat again when the task is applied as an update. DB Collections are included. So attach a shared DB Collection to the task once, and every launched chat works on the same records. Links the chat already had keep their current status and access mode. The sync is best effort; a failure shows up as `collections_warning`.
+
+**Disable, detach, delete.**
+
+| Action | Effect on the chat | Effect on the data |
+|--------|--------------------|--------------------|
+| Set the chat link's status to `disabled` | The collection stops resolving in that chat, and the chat stops receiving its change events | None |
+| Detach from the chat | Same as disabling, but the link is removed | None. Other chats keep reading and writing it |
+| Delete the collection | It stops resolving everywhere | Treat the records as gone. Export anything you need first |
+
+### Access modes
+
+Each attachment has an `access_mode`, reported by `db_list_collections`:
+
+- `read_write` lets the chat's app and agent read and write.
+- `read_only` lets reads succeed and refuses every write, whether you targeted the collection by name or by id.
+
+!!! note "Attachments are currently always read-write"
+    The API has no endpoint that sets `access_mode`, so every attachment, including those copied from a task, is `read_write`. Read-only enforcement exists, but you cannot switch it on yourself yet. Until you can, do not rely on it to protect shared data. Keep write paths in the app that owns the data, and review consumer apps for writes.
+
+### Real-time sync across chats
+
+A write to a DB Collection emits a change event to **every chat the collection is attached to** with status `active`, not only the chat that wrote it. It does not matter whether the write came from a Live App, the REST API or the AI agent. `pt.onEntityChanged()` receives these events alongside the chat database's own events. This cross-chat delivery is what makes a shared store useful: the dashboard in chat B refreshes when the intake app in chat A adds a case.
+
+Tell the two kinds of event apart with `collection_id`. Only DB Collection events carry it:
+
+```javascript
+const CASES_ID = 42;
+
+pt.onEntityChanged((event) => {
+  if (event.collection_id === CASES_ID) {
+    refreshCases();            // a DB Collection change, possibly from another chat
+  } else if (event.collection_id === undefined) {
+    refreshLocalState();       // a change to this chat's own database
+  }
+});
+```
+
+DB Collection events also carry `collection_name`, `source_chat_uuid` (the chat the write came from) and `action`. The per-action id fields (`entity_id`, `inserted_entity_ids`, `updated_entity_ids`, `deleted_entity_ids`) are the same as for the chat database.
+
+!!! warning "Entity ids are not unique across stores"
+    Each store numbers its entities independently. The chat database and a DB Collection can each hold an entity `17`. So an `entityId`/`entityIds` filter on `pt.onEntityChanged()` can match the wrong store. Check `collection_id` as well.
+
+### AI agent access
+
+The agent's Chat DB tools (`chatdb_list`, `chatdb_get`, `chatdb_add`, `chatdb_edit`, `chatdb_delete`) take an optional `collection_name`. When it is set, the tool targets that DB Collection instead of the chat's own database. The Chat DB (Edit) capability therefore lets the agent write shared records, and Chat DB (Read Only) lets it read them. The collection must be attached to the chat, and writes need a read-write attachment.
+
+Two limits to design around:
+
+- The agent tools target a collection **by name only**. Give shared collections unique names within a chat.
+- The agent is not told which DB Collections are attached. Name the collection, and the entity types it holds, in the task goal or the agent's instructions. Otherwise the agent writes to the chat's own database.
+
+The fire-and-forget pattern works unchanged. Tell the agent to call `chatdb_edit` with `collection_name` set, and every attached chat receives the update event.
+
+### What behaves the same as the chat database
+
+- Pagination (`limit`/`offset`, `page`/`pageSize`) and `returnMetadata`
+- `creator_user_id` on every entity. It is set on create and not changed by edits.
+- Optimistic locking with `ifUnchangedSince`, and the `{ success, conflict, currentEntity }` result
+- Per-item batch semantics: `batchAdd`, `batchEdit` and `batchDelete` report success or failure per item and are not transactional
+
+!!! warning "Some filters behave differently on a DB Collection"
+    A DB Collection has its own copy of the filter engine, and it does not yet have two fixes the chat database has:
+
+    - **Boolean equality does not match.** `filters: { done: true }` finds nothing, because the value is compared as the text `True`. Store flags as strings (`'yes'`/`'no'`), or filter them in the app.
+    - **Range operators are numeric only.** `$gt`, `$gte`, `$lt` and `$lte` cast the field to a number. A range on an ISO date string fails, and so does a range on a field where any row holds a non-numeric value. Store the timestamps you want to range over as epoch milliseconds.
+
+    Equality on strings and numbers, `$in`, `$ne`, `$like`, `$ilike`, `$contains` and `$or` behave as they do on the chat database.
+
+### Designing for shared data
+
+Sharing data changes how you have to build. Before you choose a DB Collection, plan for the following.
+
+- **The schema is a contract.** Every app attached to the collection reads the same entity types and fields. Adding a field is safe. Renaming or removing one breaks the other apps. Add fields instead of changing them, keep readers tolerant of missing fields, and give major changes a new entity type (`case_v2`) with a migration step.
+- **Mistakes spread further.** A bug that deletes or corrupts records in one app does it for every app. Keep destructive operations in one owning app. Prefer `edit(..., true)` (merge) so that each app only touches its own fields, and use `ifUnchangedSince` where two apps edit the same records.
+- **Decide who owns writes.** A good pattern is one owning app that writes and any number of consumer apps that only read. Until read-only attachments can be set (see [Access modes](#access-modes)), this is a code convention, not a platform guarantee.
+- **Keep per-user and per-chat state in the chat database.** View state, selections, drafts and preferences written to a shared store land on everyone. Store only the shared domain records in the DB Collection, and keep the rest in `pt.*`.
+- **Name collections and entity types deliberately.** Names are how apps, the agent and people find the data. A name that clashes with another attached collection makes name-based targeting ambiguous.
+- **Everyone in an attached chat can use it.** Any member of an attached chat reaches the collection through that chat's app and agent. Attach a collection only to chats whose members should see all of it.
+
+---
+
 ## What NOT to Store in Database
 
 Some data should remain in memory only:
@@ -469,6 +607,7 @@ Once migration is complete, remove all localStorage code.
 | List of items | Entity per item | `task`, `note`, `item` |
 | Current view/screen | Single entity | `view_state` |
 | Form drafts | Single entity | `form_draft` |
+| Records shared by several chats or apps | Entity per item in a [DB Collection](#sharing-data-across-chats-db-collections) | `case`, `ticket` |
 
 ---
 
@@ -568,6 +707,7 @@ When building a new PrimeThink Live App:
 - [ ] **Debounce saves** - Don't save on every keystroke
 - [ ] **Don't serialize functions** - Keep runtime-only data in memory
 - [ ] **Test multi-window** - Open app in multiple tabs to verify state sync
+- [ ] **Choose the store deliberately** - Chat database by default; a DB Collection only for records other chats must share, never for per-user state
 
 ---
 

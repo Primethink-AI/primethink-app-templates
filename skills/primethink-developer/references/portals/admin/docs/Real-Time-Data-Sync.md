@@ -663,13 +663,34 @@ pt.onSocketEvent((event, data) => {
 
 ---
 
+## Connection Notes
+
+Real-time updates travel over a WebSocket. The connection no longer falls back to HTTP long-polling, because polling could not be made to work reliably behind the platform's load balancing — a polled session could land on a different replica than the one holding it and be rejected as invalid. Pinning the transport means a Live App gets real-time updates wherever it is rendered, not only inside the PrimeThink app's own wrapper.
+
+The practical consequence for you: if a Live App is served through a proxy or network that blocks WebSocket upgrades, real-time updates will not arrive at all rather than degrading to a slower polling mode. Read operations over the REST API are unaffected.
+
+### Apps that stay open for days
+
+A Live App is handed its credentials when the page is served, and those credentials last 24 hours. An app left open longer than that — a kiosk, a wall dashboard, a screen nobody reloads — used to lose real-time updates permanently and start failing its data calls at the 24-hour mark, recoverable only by reloading the page.
+
+The library now replaces those credentials by itself, so a long-running app keeps working:
+
+- It refreshes ahead of expiry, and checks again when a backgrounded tab becomes visible, since browsers throttle timers in background tabs.
+- If a connection is refused because the credentials expired, it refreshes and reconnects. A refusal for any other reason — the platform being briefly unavailable, for instance — is retried with a backoff instead, so an incident does not turn into a stampede of credential requests.
+- A data call rejected specifically as an expired credential is retried once with the new one. A rejection because you are not allowed to reach that chat is not treated as an expiry.
+
+There is nothing to call and nothing to configure; `pt` handles it. What this means in practice is that you can build a display that runs unattended without a scheduled reload, and that an app which stops updating is now a genuine signal rather than an expected 24-hour ritual.
+
+---
+
 ## Notes
 
 - All batch operations only emit events if at least one operation succeeds
 - Single operations only emit on success
 - The `data` field is intentionally excluded from payloads to keep them lightweight
 - Clients should fetch full entity data via API after receiving notifications
-- Events are emitted to the `chat_{chat_uuid}` room, so only users in the same chat receive them
+- Chat database events are emitted to the `chat_{chat_uuid}` room, so only users in the same chat receive them
+- Writes to a [DB Collection](Live-Apps-State-Management.md#sharing-data-across-chats-db-collections) are emitted to **every chat the collection is attached to**, and `pt.onEntityChanged()` receives them too. They carry `collection_id`, `collection_name` and `source_chat_uuid`; chat database events do not. Entity ids are numbered per store, so check `collection_id` before trusting an `entityId` match
 - The `entityName` filter is most useful for `inserted` events, since `updated` and `deleted` events don't always include the entity name
 
 ---

@@ -34,6 +34,8 @@ The table below summarizes who is allowed to edit or delete each type of agent:
 
 > For a full list of agent-related permissions, see [Roles and Permissions](/admin/Roles-and-Permissions/).
 
+Wherever you pick an agent — group settings, a chat's settings, or a task dialog — the agent card itself offers an edit action, so you can adjust the agent you are about to select without leaving the dialog. Editing still follows the ownership and permission rules above.
+
 ## Agent Configuration and Customization
 
 Each agent in PrimeThink can be configured to suit your specific needs:

@@ -66,6 +66,16 @@ Tasks can utilize various capabilities:
     - Read the task description carefully
     - Use scheduled tasks for recurring needs
 
+## Archiving Tasks and Live Apps
+
+A task or Live App that has served its purpose can be **archived** rather than deleted. An archived task keeps its goal, documents, schedule, and history, and can be brought back at any time.
+
+Archived tasks and Live Apps are left out of the task list by default, so an archived workflow stops cluttering the list without anyone losing it. Ask for them explicitly to see them — through the app's archived filter, or by passing `archived=true` when listing tasks through the API, which returns active and archived entries together.
+
+In the app, **Archive** and **Unarchive** sit on the item's own menu and ask you to confirm before acting. The archived filter shows archived items in place of the active ones, and it is mutually exclusive with the catalog view: turning one on turns the other off.
+
+Archiving a task requires permission to edit it, which covers both your own private tasks and the group tasks you are allowed to edit.
+
 ## Creating Custom Tasks
 
 Need a specific workflow? You can create custom tasks tailored to your exact requirements. For a comprehensive guide covering goal writing, task patterns, capabilities configuration, and best practices, see [Creating Tasks](Creating-Tasks.md).

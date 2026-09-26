@@ -17,12 +17,16 @@ For a terse, complete listing of every command and option, see the [CLI Referenc
 9. [Semantic Search](#semantic-search)
 10. [Managing Agents](#managing-agents)
 11. [Managing Tasks](#managing-tasks)
-12. [Scaffolding Live Apps](#scaffolding-live-apps)
-13. [MCP Server](#mcp-server)
-14. [Common Use Cases](#common-use-cases)
-15. [Tips and Tricks](#tips-and-tricks)
-16. [Troubleshooting](#troubleshooting)
-17. [FAQ](#faq)
+12. [Evaluating Tasks](#evaluating-tasks)
+13. [Managing Settings](#managing-settings)
+14. [Finding Users](#finding-users)
+15. [Notifications](#notifications)
+16. [Scaffolding Live Apps](#scaffolding-live-apps)
+17. [MCP Server](#mcp-server)
+18. [Common Use Cases](#common-use-cases)
+19. [Tips and Tricks](#tips-and-tricks)
+20. [Troubleshooting](#troubleshooting)
+21. [FAQ](#faq)
 
 ## Introduction
 
@@ -73,7 +77,7 @@ pt version
 
 You should see output like:
 ```
-PrimeThink CLI v1.3.3
+PrimeThink CLI v1.5.0
 ```
 
 ## Getting Started
@@ -107,7 +111,7 @@ Check who you're authenticated as:
 pt whoami
 ```
 
-This prints your user details and groups as JSON — if it succeeds, your token works. It also takes `--profile`, which makes it the quickest way to verify which account each profile points at:
+This prints your user details, groups, active group, and the LLM providers you have API keys for (`configured_providers`) as JSON — if it succeeds, your token works. It also takes `--profile`, which makes it the quickest way to verify which account each profile points at:
 
 ```bash
 pt whoami --profile production | jq '.user.email'
@@ -157,11 +161,11 @@ pt task execute --action summarize --message "Test" --profile custom
 
 This works on every API command, including the `chat`, `collection`, `agent`, `task`, `search`, `image`, and `whoami` commands.
 
-> **Heads-up:** in the `pt task`, `pt agent`, and `pt search` groups, `pt image generate`,
-> and `pt whoami`, `-p` is the short flag for `--profile`. In the `pt chat` and
-> `pt collection` groups there is no `-p` for profile — there `-p` is the short flag for
-> `--path` (a directory inside the chat or collection) on the file commands. Use the long
-> form `--profile` when in doubt.
+> **Heads-up:** in most groups (e.g. `pt task`, `pt agent`, `pt search`, `pt settings`,
+> `pt user`, `pt eval`), `pt image generate`, and `pt whoami`, `-p` is the short flag for
+> `--profile`. In the `pt chat` and `pt collection` groups there is no `-p` for profile —
+> there `-p` is the short flag for `--path` (a directory inside the chat or collection) on
+> the file commands. Use the long form `--profile` when in doubt.
 
 #### List All Profiles
 
@@ -425,6 +429,26 @@ pt chat goal 123 --goal "Track the Q3 launch checklist"
 pt chat goal 123 --goal-file ./goal.md
 ```
 
+### Organizing chats into workspaces
+
+Workspaces group related chats. The `pt workspace` group manages them:
+
+```bash
+# Create one and add chats to it
+pt workspace create --name "Client A" --goal "Everything for Client A"
+pt workspace add-chat 9 123          # add chat 123 to workspace 9
+pt workspace remove-chat 123          # take chat 123 out of its workspace
+
+# Organize
+pt workspace list --pinned
+pt workspace rename 9 "Client A — 2024"
+pt workspace pin 9
+pt workspace archive 9
+
+# Delete (add --delete-chats to also delete the chats inside; asks for confirmation)
+pt workspace delete 9
+```
+
 ## Working with Chat Files
 
 Chats have their own file workspace, organized into directories. The `pt chat` command group lets you browse, upload, download, and sync those files.
@@ -461,6 +485,24 @@ pt chat download-file 123 456
 
 # Save to a specific path
 pt chat download-file 123 456 --output ./downloads/report.pdf
+```
+
+### Delete a file
+
+Remove a file from a chat by its document ID (asks for confirmation; `--yes` to skip):
+
+```bash
+pt chat delete-file 123 456
+pt chat delete-file 123 456 --yes
+```
+
+### Create a document from raw text
+
+No local file needed — pass the body inline or from a file. The same command exists for collections and tasks (`pt collection upload-text`, `pt task upload-text`):
+
+```bash
+pt chat upload-text 123 --text "Key decisions from the call: ..." --name decisions.md
+pt chat upload-text 123 --text-file ./notes.md --path /notes
 ```
 
 ### Sync a local directory into a chat
@@ -521,6 +563,63 @@ If the chat's file tree can't be fully listed (e.g. a network hiccup), the comma
 Sync complete: 3 downloaded, 2 uploaded, 4 skipped, 0 failed
 ```
 
+### Managing folders
+
+Chats, collections, tasks, and agents organise their files into directories, and the same four commands work under each of `pt chat`, `pt collection`, `pt task`, and `pt agent` (list a folder's contents with the group's `list-files`):
+
+```bash
+pt chat mkdir 123 /reports                         # create
+pt chat rename-dir 123 /reports /reports-2024       # rename
+pt chat move-dir 123 /reports-2024 /archive --merge # move (merge if the target exists)
+pt chat rmdir 123 /archive --recursive              # delete (asks for confirmation; --yes to skip)
+```
+
+Swap `chat`/`123` for `collection`/`task`/`agent` and the matching ID — the commands are identical.
+
+### Document versions
+
+Documents in chats, collections, and tasks keep a version history. The same commands work under `pt chat`, `pt collection`, and `pt task` (get a document ID from `list-files`):
+
+```bash
+pt chat list-versions 123 456                                  # history
+pt chat new-version 123 456 ./updated.pdf --version-name v2     # new version from a file
+pt chat new-text-version 123 456 --text "revised body"          # ...or from raw text
+pt chat set-production-version 123 456 2                         # promote version 2 to production
+pt chat delete-version 123 456 1 --yes                          # delete a version
+```
+
+### Chat members
+
+Set up a multi-user chat by inviting users and/or agents (both are identified by ID; agents are virtual assistants):
+
+```bash
+# Who's in the chat?
+pt chat list-users 123
+
+# Invite (at least one --user-id or --agent-id required)
+pt chat invite-members 123 --user-id 10 --user-id 11 --agent-id 7
+
+# Remove
+pt chat remove-members 123 --user-id 11
+```
+
+### Message operations
+
+Edit, delete, clear, retry, export, or turn a chat into a task:
+
+```bash
+pt chat edit-message 456 "corrected text"
+pt chat retry-message 456
+pt chat delete-message 123 456                 # asks for confirmation
+pt chat clear-messages 123                       # wipes the whole chat (confirm)
+
+# Export a single message to a file
+pt chat export-message 123 456 --format pdf -o answer.pdf
+
+# Turn the chat into a reusable task
+pt chat save-as-task 123 --name "Support recap" --type private
+```
+
 ## Working with Collections
 
 Collections are shared document stores. The `pt collection` file commands work exactly like their `pt chat` counterparts, plus there's a discovery command.
@@ -535,6 +634,31 @@ pt collection list
 pt collection list --search contracts --page-size 50
 ```
 
+### Create, inspect, update, and delete collections
+
+```bash
+# Create a collection
+pt collection create --name "Knowledge base"
+pt collection create --name "Support skill" --type skill --public
+
+# Inspect a collection (name, indexed flag, documents, …)
+pt collection get 42
+
+# Update fields (PATCH — only what you pass changes)
+pt collection update 42 --name "Renamed KB" --indexed
+
+# Rebuild the vector store (use if a fresh upload isn't searchable yet)
+pt collection reindex 42
+
+# Duplicate a collection (takes the UUID, not the numeric id)
+pt collection copy <COLLECTION_UUID>
+
+# Delete a collection (asks for confirmation; --yes to skip)
+pt collection delete 42
+```
+
+Collections that hold images can be searched visually with `pt search images <COLLECTION_ID> --query "a red car"` or `--image ./example.jpg`.
+
 ### File operations
 
 ```bash
@@ -548,10 +672,61 @@ pt collection upload-files 42 handbook.pdf --path /policies
 # Download
 pt collection download-file 42 789 --output handbook.pdf
 
+# Create a document from raw text (no local file)
+pt collection upload-text 42 --text "Return policy: 30 days." --name policy.md
+pt collection upload-text 42 --text-file ./faq.md --path /support
+
+# Delete files by document ID (asks for confirmation; --yes to skip)
+pt collection delete-file 42 789
+pt collection delete-file 42 789 790 791 --yes
+
 # Sync in both directions
 pt collection sync-to 42 ./knowledge-base --recursive
 pt collection sync-from 42 ./kb-backup
 ```
+
+> Document IDs come from `pt collection list-files`.
+
+## Working with ChatDB (Live App data)
+
+ChatDB is a chat's structured data store — the store that PrimeThink **Live Apps** read from and write to. The `pt chatdb` group lets you manage that data directly, which is handy for seeding fixture data before you test a Live App, or for inspecting and verifying the state a Live App produced (previously only reachable in the browser).
+
+Data is grouped into named **entities** (like tables); each row has an `id`. Initialize the store once per chat, then read and write rows.
+
+```bash
+# Initialize the store for a chat (once)
+pt chatdb init 123
+
+# Add rows — a single row, or many at once
+pt chatdb add 123 --entity todos --data '{"title": "ship it", "done": false}'
+pt chatdb add 123 --entity todos --items '[{"title": "a"}, {"title": "b"}]'
+
+# List rows, optionally filtered
+pt chatdb list 123 --entity todos
+pt chatdb list 123 --entity todos --filters '{"done": false}' --limit 20
+
+# Read, update, and delete a specific row
+pt chatdb get 123 7
+pt chatdb update 123 --entity-id 7 --data '{"done": true}' --merge
+pt chatdb delete 123 --entity-id 7          # asks for confirmation; --yes to skip
+```
+
+`--data` takes a single JSON object; `--items` takes a JSON array for bulk operations. On update, `--merge` patches the existing row while `--replace` overwrites it, and `--if-unchanged-since TIMESTAMP` guards against overwriting a row that changed underneath you.
+
+### DB Collections
+
+A **DB Collection** is a collection of type `db` that holds the same kind of entities, but can be shared between chats. Once one is attached to a chat, `list`, `get`, `add`, `update` and `delete` can target it instead of the chat's own ChatDB, by name or by ID:
+
+```bash
+pt collection create --name project-db --type db     # note the id, e.g. 42
+# attach it to the chat in the web app, then:
+pt chatdb add 123 --entity tasks --data '{"title": "a"}' --collection project-db
+pt chatdb list 123 --entity tasks --collection-id 42
+```
+
+Prefer `--collection-id` when two attached DB Collections share a name, or in scripts that should survive a rename. If you pass both, they must identify the same collection. A collection attached read-only accepts `list`/`get` but rejects writes. This mirrors `pt.db('project-db')` / `pt.db(42)` in a Live App.
+
+> Building the Live App itself (the front-end that uses this data) is covered by the **primethink-developer** skill; `pt chatdb` is the deterministic data plane underneath it.
 
 ## Semantic Search
 
@@ -584,6 +759,59 @@ Extras per command:
 
 > Note: `--collection-name` (for `documents`/`messages`) is a **vector store collection name**, not the numeric collection ID used by `pt collection` commands.
 
+> If a search returns `Error: 500`, the collection you named most likely doesn't exist (the API answers a raw 500 rather than a 404). The CLI appends a hint saying so — double-check the name/id with `pt collection list`.
+
+## Discovering Models
+
+Before creating an agent or group, look up a real model id instead of guessing the string. The `pt models` group reads the catalog:
+
+```bash
+# LLM models the workspace can actually use
+pt models list --only-configured
+
+# Filter by capability/provider, and grab the ids
+pt models list --provider openai --vision | jq '.[].id'
+
+# Embedding models (for collections/RAG)
+pt models embeddings --only-configured
+```
+
+Both commands return a **trimmed summary** (id, provider, context window, capability flags, whether the provider is configured) by default; add `--full` for the raw catalog records. Use a model's `id` for `pt agent create --model`.
+
+## Tagging
+
+Tasks, agents, capabilities, and collections can be tagged. The `pt tag` group lists, creates, and assigns tags — tags are namespaced by object type via `--model`:
+
+```bash
+pt tag list --model collection --only-used            # existing tags for collections
+pt tag create --model collection --name legal          # create one
+pt tag assign --model collection --owner-id 42 --tag-id 3 --tag-id 5   # set a collection's tags
+```
+
+`assign` replaces the object's whole tag set with the IDs you pass (pass none to clear them). Many create commands also accept `--tag-ids` directly (e.g. `pt task create`, `pt agent create`).
+
+## Managing Groups
+
+The `pt group` group manages groups (organizations) — their details, members, invites, and the agents available inside them:
+
+```bash
+pt group list
+pt group get 5
+pt group create --name "Acme"
+pt group update 5 --name "Acme Inc"       # PUT — --name is required
+
+# Members and invites
+pt group members 5 --search ann
+pt group invite --email new.hire@acme.co --role-id 2   # invites to the current group
+pt group remove-member 5 42
+
+# Agents available in the group
+pt group add-agent 5 7 8
+pt group remove-agent 5 7
+
+pt group delete 5                          # DESTRUCTIVE (asks for confirmation)
+```
+
 ## Managing Agents
 
 The `pt agent` group manages agents (virtual assistants) — the AI assistants you message with `pt chat send --agent`.
@@ -595,9 +823,16 @@ The `pt agent` group manages agents (virtual assistants) — the AI assistants y
 pt agent list
 pt agent list --search support --status archived
 
+# Trim each agent to lightweight fields (heavy config dropped)
+pt agent list --summary
+
 # Full details for one agent
 pt agent get 7
 ```
+
+> Tip: a full agent list embeds each agent's config, description, and
+> capabilities, so a busy workspace can be a big payload. Use `--summary` for a
+> quick overview, then `pt agent get` for the one you care about.
 
 ### Create an agent
 
@@ -622,9 +857,25 @@ pt agent create \
 ```
 
 - `--description` / `--description-file` — the agent's description/instructions, inline or from a file
-- `--model` — which model the agent uses
+- `--model` — which model the agent uses (get a real id from `pt models list`, don't guess)
 - `--access-type` — `private` (default), `group`, `task`, `system`, or `catalog`
 - `--tag-ids 3,4`, `--extra '{"key": "value"}'`, `--help-text`, `--help-url`
+
+### Give an agent knowledge (RAG)
+
+Attach documents and collections so an agent can retrieve from them:
+
+```bash
+# Upload files straight into the agent's knowledge base
+pt agent upload-docs 7 handbook.pdf faq.md --attachment-mode search
+
+# See what's attached
+pt agent list-docs 7
+
+# Attach / detach shared collections (find collection ids with `pt collection list`)
+pt agent attach-collections 7 42 43
+pt agent detach-collection 7 43
+```
 
 ### Update or delete an agent
 
@@ -644,9 +895,51 @@ Messaging stays under `pt chat send` — there is deliberately no separate `pt a
 pt chat send --agent 7 --message "Analyze this data" --files data.csv
 ```
 
+## Managing Agent Capabilities
+
+Capabilities are reusable tools/behaviours (internal, MCP, API, computer-use, or sandbox) that agents can use. The `pt capability` group is full CRUD:
+
+```bash
+# List (optionally by type/tag, or archived)
+pt capability list --type mcp
+pt capability list --archived
+
+# Create — name and code are required
+pt capability create --name "Web search" --code web_search --type mcp \
+  --access-type group --options '{"endpoint": "https://…"}'
+
+# Update (PATCH — only the fields you pass change)
+pt capability update 12 --description "Searches the public web"
+
+# Archive / unarchive / duplicate
+pt capability archive 12
+pt capability unarchive 12
+pt capability duplicate 12
+
+# Delete (asks for confirmation; --yes to skip)
+pt capability delete 12
+```
+
+Types are `internal`, `mcp`, `api`, `computer_use`, `sandbox`; access types are `system`, `group`, `user`, `private`. `--options` takes a JSON object of capability-specific config.
+
 ## Managing Tasks
 
-The `pt task` group lets you create, inspect, update, and version tasks from the terminal.
+The `pt task` group lets you list, create, inspect, update, and version tasks from the terminal.
+
+### List tasks
+
+```bash
+# List tasks (paginated; server default status is "published")
+pt task list
+
+# Filter by name, type, and status
+pt task list --search onboarding --type private --status all
+
+# Grab just the IDs
+pt task list | jq '.items[].id'
+```
+
+Filters mirror the web app: `--type` (repeatable), `--status` (`all`/`published`/`archived`), `--page-type` (`chat`/`html`/`react`), `--starred/--no-starred`, `--order-by`, `--order-dir`, and `--page`/`--page-size`. See the [CLI Reference](docs/cli-reference.md#pt-task-list) for the full list.
 
 ### Create a task
 
@@ -697,7 +990,11 @@ pt task duplicate 99
 
 # Publish a conventional task project; GOAL.md is required
 pt task publish ./tasks/briefing --virtual-assistant-id 7
+pt task publish ./tasks/briefing --virtual-assistant-id 7 --type group --chat-history --docs-enabled --scheduled-jobs
 pt task publish ./tasks/briefing --task-id 99 --virtual-assistant-id 7
+
+# Launch a task into a new chat, optionally inside a workspace (prints the chat JSON + URL)
+pt task launch 99 --workspace-id 738
 
 # Sync the project goal into a new temporary chat or an existing chat
 pt task test ./tasks/briefing
@@ -713,6 +1010,31 @@ pt task delete 99 --yes
 ```
 
 A project directory can override its folder name with `.name.config`, its description with `.description.config`, and its initial prompt with `INITIAL_PROMPT.md`. For type changes other than public/private (e.g. `group` or `catalog`), use `pt task update 99 --type group`.
+
+`pt task publish` prints progress lines rather than JSON, ending with `Task ID: 81`. Task type and feature toggles come from its options (`--type`, `--chat-history`, `--docs-enabled`, `--scheduled-jobs`, `--global-memory`, `--search-in-chat`, `--search-in-documents`, `--summary-enabled`, `--email-integration`, `--share-action`, `--public-chat`, `--run-immediately`), else from an optional `task.json` in the project directory (`{"type": "group", "chat_history": true, "documents_and_collections_enabled": true, "scheduled_jobs_enabled": true}`), else from the conservative defaults: a created task is **private** with memory, chat history, search, summary, documents and collections, scheduled jobs and email integration **switched off** — so a task that relies on its documents or on scheduling must enable them. A later `pt task publish --task-id` re-syncs name, description, goal, initial prompt, virtual assistant and page type plus every type/toggle given on the command line and every accepted field present in `task.json`; settings the project does not state are not overwritten.
+
+`pt task launch TASK_ID` starts a task the way the web app does when you open one: it creates a chat (inside `--workspace-id` when given) that inherits the task's goal, default agent, settings, documents, collections and scheduled job, posts the task's initial prompt, and prints the chat JSON followed by `Chat URL: …`. `pt chat create --from-task-id TASK_ID` does the same through the generic chat-create command.
+
+`pt task test` creates a **new** chat unless you pass `--chat-id`, and prints the chat URL as its last line. A test chat is temporary by default; pass `--permanent` when you mean to keep it. To keep re-testing in the same chat, record the ID on the first run:
+
+```bash
+# first run — create and record
+out=$(pt task test ./tasks/briefing --permanent) || { echo "test deploy failed"; exit 1; }
+printf '%s\n' "$out"
+CHAT_ID=$(printf '%s\n' "$out" | sed -n 's#^Chat URL: .*/chats/##p')
+[ -n "$CHAT_ID" ] || { echo "no Chat URL in output"; exit 1; }
+printf '%s\n' "$CHAT_ID" > ./tasks/briefing/.chat-id
+
+# Later runs: update that same chat
+pt task test ./tasks/briefing --chat-id "$(cat ./tasks/briefing/.chat-id)"
+```
+
+Write the file only after checking both the status and the ID — redirecting the command
+straight into `.chat-id` truncates it the moment a run fails, losing the chat you were
+iterating on. The status check alone would miss a run that exits `0` without printing a
+`Chat URL:` line; the ID check alone would miss a run that printed the URL and then failed.
+
+`.chat-id` is just a convention — no command reads it automatically. Keep it out of git; it points at your own test chat.
 
 ### Version a task
 
@@ -745,6 +1067,20 @@ Notes:
 - A raw `pt task get` dump also imports cleanly; non-portable fields are ignored.
 - `name`, `description`, and `type` are required in the file; a missing `goal` defaults to empty.
 
+### Task knowledge documents
+
+Give a task its own documents (parallel to chat/collection uploads):
+
+```bash
+# Upload files into the task's knowledge base
+pt task add-docs 99 spec.pdf notes.md --attachment-mode search
+
+# Delete documents by ID (asks for confirmation; --yes to skip)
+pt task delete-docs 99 12 13
+```
+
+You can also create a task document from raw text with `pt task upload-text` (see the chats section for the shared options).
+
 ### Task images
 
 ```bash
@@ -754,6 +1090,177 @@ pt task upload-image 99 ./cover.png
 # Generate an image with AI and save it locally
 pt image generate --prompt "A lighthouse at dawn, watercolor" --output lighthouse.png
 pt image generate --prompt "Minimal flat team logo" --style illustration --size 512x512 -o logo.png
+```
+
+> The output file's extension is corrected to match the format the API actually returns — if you ask for `lighthouse.png` but the API sends a JPEG, it's saved as `lighthouse.jpg` and the command tells you.
+
+### Voice and video
+
+The `pt voice` and `pt video` groups process media (these use the longer 120s timeout):
+
+```bash
+pt voice stt meeting.m4a                              # transcribe
+pt voice translate call.wav                            # translate spoken audio to English
+pt voice diarize call.wav --speaker-count 2            # who spoke when
+pt voice tts --text "Welcome aboard" --voice nova -o welcome.mp3   # synthesize speech
+pt video analyze demo.mp4 --extra-instructions "summarize the UI shown"
+```
+
+`pt voice tts` saves the audio to `--output` (default `tts.mp3`) when the API returns audio; if it returns JSON (e.g. a URL) that's printed instead.
+
+## Scheduling Jobs in a Chat
+
+A scheduled job runs a prompt on a schedule inside a chat — think cron for chats. The `pt scheduled-job` group manages them:
+
+```bash
+# List the jobs in a chat
+pt scheduled-job list 123
+
+# Create one — --schedule-nl accepts plain English or cron
+pt scheduled-job create --chat-id 123 --schedule-prompt "Post the daily digest" \
+  --schedule-nl "every weekday at 9am" --notify
+
+# Pause / resume
+pt scheduled-job set-status 45 --status Paused
+pt scheduled-job set-status 45 --status Active
+
+# Update or delete
+pt scheduled-job update 45 --schedule-prompt "Post the weekly digest"
+pt scheduled-job delete 45
+```
+
+> Because `--schedule-nl` is interpreted by an LLM server-side, `create`/`update` calls that include it use a longer (120s) timeout — don't treat the wait as a hang.
+
+## Evaluating Tasks
+
+The `pt eval` group tests a task against a set of expected question/answer cases, then scores its actual responses. The typical flow is: **build a plan** (`pt eval add`), **configure how it runs** (`pt eval settings`), **run it** (`pt eval run`), then **read the results** (`pt eval results`). Every command takes the task ID.
+
+### 1. Build the evaluation plan
+
+Each test case pairs a user query with the ideal response and a match type — `exact` (exact match), `similar` (fuzzy/semantic match), or `agent` (an evaluator agent judges the answer):
+
+```bash
+# See existing cases
+pt eval list 99
+
+# Add cases
+pt eval add 99 --user-query "What's your return window?" --ideal-response "30 days" --type similar
+pt eval add 99 --user-query "Refund a gift?" --ideal-response "Yes, store credit" --type agent --evaluator-agent-id 7
+
+# Edit or remove a case (delete is destructive; --yes to skip the prompt)
+pt eval update 99 EVAL_ID --ideal-response "30 days from delivery"
+pt eval delete 99 EVAL_ID
+```
+
+`--examples '{...}'` attaches good/bad example fields; `--chat-group` (default `1`) groups related cases.
+
+### 2. Configure how evaluations run
+
+```bash
+pt eval settings 99 --active --run-time daily --evaluator-agent-id 7 --pass-threshold 80
+```
+
+`--run-time` is `manual`, `daily`, `weekly`, or `monthly`; `--pass-threshold` is the minimum score to count as a pass, as a whole-number percentage from 1 to 100 (`80`, not `0.8`) — anything outside that range is rejected by the CLI before a request is made; `--message-delay-ms` throttles messages during a run.
+
+### 3. Run it, then read the results
+
+```bash
+# Run the evaluation (optionally against a specific task version or model)
+pt eval run 99
+pt eval run 99 --version 2 --model-override gpt-test
+
+# Inspect past runs and their results
+pt eval runs 99
+pt eval run-get 99 RUN_ID
+pt eval results 99 --run-id RUN_ID
+pt eval download 99 RUN_ID -o results.json
+```
+
+### Simulations
+
+Simulations drive the task with a *simulator* agent toward a goal for up to `--max-turns`, then score the transcript:
+
+```bash
+pt eval simulate 99 --simulator-agent-id 5 --goal "Get a refund on a gift" --max-turns 10 --evaluator-agent-id 7
+pt eval simulations 99
+pt eval delete-simulation 99 SIM_ID          # destructive; --yes to skip the prompt
+```
+
+## Managing Settings
+
+The `pt settings` group reads and writes group and user settings, including provider API keys. Settings live at two **scopes** — `group` and `user` — and some keys exist at both. **Secret values are never shown**: listing/getting a setting reports only whether it `is_set` and whether it's `sensitive`, and a sensitive value is redacted on `get`.
+
+```bash
+# See what's set (optionally narrow to one scope)
+pt settings list
+pt settings list --scope group
+
+# Read one value (sensitive values come back redacted)
+pt settings get timezone --scope user
+```
+
+### Set a provider API key
+
+Any `*_API_KEY` key (e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) is stored as a secret at group scope. After setting one, `pt whoami` lists that provider under `configured_providers`:
+
+```bash
+pt settings set ANTHROPIC_API_KEY sk-ant-… --scope group
+pt whoami | jq '.configured_providers'
+```
+
+### Set the group's default agent, or other settings
+
+```bash
+# The group default agent is just a setting
+pt settings set default_agent 7 --scope group
+
+# Other known group keys: voice, voice_provider, new_chat_logic, group_mode,
+# default_role, document_analysis_active, public_name, custom_theme_color
+# User keys: timezone, location, default_language, default_va, auto_archive_option, custom_theme_color
+pt settings set timezone "Europe/Rome" --scope user
+```
+
+Pass `--scope` explicitly whenever a key exists at both scopes. Delete a key/value setting with `pt settings delete KEY --scope … --yes` (dedicated properties can't be deleted).
+
+## Finding Users
+
+The `pt user` group looks up the users you can see, by name or email. The endpoint returns your full visible-users list, so the CLI applies `--search` and `--limit` **client-side**:
+
+```bash
+# Everyone you can see
+pt user list
+
+# Filter by name/email, cap the count, or get richer records
+pt user search ann@acme.co
+pt user list --search support --limit 20
+pt user list --full
+```
+
+This pairs with inviting people to a chat by email — `pt chat invite-members` resolves an `--email` to a user ID via the same visible-users directory:
+
+```bash
+pt chat invite-members 123 --email teammate@acme.co
+```
+
+## Notifications
+
+The `pt notification` group reads your notifications and marks them read or unread (sending a notification isn't exposed by the API). `--unread-only` filters the current page **client-side**:
+
+```bash
+# List notifications (newest first); page through with --page / --page-size
+pt notification list
+pt notification list --unread-only
+
+# How many are unread?
+pt notification unread-count
+
+# Mark one read / unread, or clear them all
+pt notification mark-read 42
+pt notification mark-unread 42
+pt notification mark-all-read
+
+# Delete one (prompts unless --yes)
+pt notification delete 42 --yes
 ```
 
 ## Scaffolding Live Apps
@@ -812,7 +1319,22 @@ pt chat type CHAT_UUID live-app
 pt chat type CHAT_UUID chat
 ```
 
-The commands read `.name.config`, `.description.config`, and optional `GOAL.md`; publish also uploads `.image.png` when present. Same-named app documents are updated as new `Production` versions, preserving their IDs and relative links.
+The commands read `.name.config`, `.description.config`, and optional `GOAL.md`; publish also uploads `.image.png` when present. Same-named app documents are updated as new versions — named `Production` unless `--version-name` says otherwise — preserving their IDs and relative links. Build before publishing or testing — neither command runs a build.
+
+Both print progress lines rather than JSON. `pt live-app publish` ends with `Live App task ID: 31`; `pt live-app test` ends with the chat URL. As with `pt task test`, omitting `--chat-id` creates a new chat every run, so store the ID once and reuse it while iterating:
+
+```bash
+# first run — create and record
+out=$(pt live-app test ./my-live-app --permanent) || { echo "test deploy failed"; exit 1; }
+printf '%s\n' "$out"
+CHAT_ID=$(printf '%s\n' "$out" | sed -n 's#^Chat URL: .*/chats/##p')
+[ -n "$CHAT_ID" ] || { echo "no Chat URL in output"; exit 1; }
+printf '%s\n' "$CHAT_ID" > ./my-live-app/.chat-id
+
+# After each rebuild: re-upload into that same chat
+npm run build
+pt live-app test ./my-live-app --chat-id "$(cat ./my-live-app/.chat-id)"
+```
 
 Automated UI testing of a Live App is not part of the CLI. It is a deterministic, plan-driven workflow provided by the `primethink-developer` skill (`pt install-developer-skill`): the skill captures the running app's accessibility snapshot, authors a reviewable `tests/test_plan.yaml`, runs it with a bundled Playwright runner without an LLM in the execution loop, reads the structured results, and heals failing selectors before re-running.
 
@@ -862,6 +1384,15 @@ Authentication is shared with the CLI: set `PRIMETHINK_TOKEN` (and optionally
 out to use your configured active profile from `~/.primethink/config.json`. Each
 tool also accepts optional `profile` and `api_url` arguments for per-call
 overrides.
+
+> **Set `PRIMETHINK_API_URL` too, not just `PRIMETHINK_TOKEN`.** With only the
+> token set, the server defaults to the **production** API
+> (`https://api.primethink.ai`). If your token is for a different environment
+> (dev/staging), calls will hit the wrong host and fail with confusing `500`s.
+> `pt mcp` prints the resolved API URL to stderr at startup and warns when the
+> URL was defaulted — check that line if requests fail unexpectedly. The example
+> above should include a matching `"PRIMETHINK_API_URL"` when your token isn't a
+> production token.
 
 A few things to know:
 
@@ -1314,6 +1845,10 @@ pt mcp
 ```
 
 Point your MCP client at `pt mcp` and provide a `PRIMETHINK_TOKEN` in its server env. See the [MCP Server](#mcp-server) section for a full client-config example.
+
+### Q: What is the `agent-tools` extra?
+
+**A**: It enables the plugin that lets PrimeThink **agents** (not you) manage tasks, agents, chats, and collections through the same client code as `pt`. It's installed in the PrimeThink API image by platform operators, not on your machine — a plain `pip install primethink-cli` doesn't need it. See [docs/agent-tools.md](docs/agent-tools.md).
 
 ### Q: How do I uninstall the CLI?
 

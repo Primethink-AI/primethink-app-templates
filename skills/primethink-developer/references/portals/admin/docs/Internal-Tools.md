@@ -14,7 +14,7 @@ The pages in this section zoom in on individual tools from that catalog. If a to
 
 | Tool | What it does | Provided by |
 |------|--------------|-------------|
-| [Read Content of URL](Read-Content-of-URL.md) | Fetches a web address and works with what's there — reading pages, returning text/data as-is, or saving files into your chat. | `base` |
+| [Read Content of URL](Read-Content-of-URL.md) | Fetches a public web address and works with what's there — reading pages, returning text/data as-is, or saving the result into your chat when you give it a folder and filename. | `base` |
 
 More tool pages will be added here over time.
 

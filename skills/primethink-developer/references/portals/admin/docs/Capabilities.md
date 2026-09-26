@@ -43,7 +43,7 @@ Turns any HTTPS endpoint into a tool. You define the URL, the HTTP method, the t
 Connects the agent to an already-deployed [Model Context Protocol](https://modelcontextprotocol.io/) server, exposing that server's tools to the model. You provide the server URL, an approval policy, and optional auth headers. Best for plugging in rich, multi-tool integrations maintained outside the platform. See [MCP Capabilities](MCP-Capabilities.md).
 
 !!! warning "MCP runs on OpenAI and direct Anthropic models"
-    Hosted MCP is executed by the model provider itself, so MCP capabilities take effect only when the agent's active model is OpenAI or direct Anthropic (`anthropic:...`). On direct Anthropic the capability must set an explicit `require_approval: "never"` and use Bearer-token auth — see [Running on Anthropic models](MCP-Capabilities.md#running-on-anthropic-claude-models). AWS Bedrock Claude (`bedrock:...`) does not provide Anthropic's hosted MCP connector; do not attach MCP capabilities to Bedrock agents because the provider can reject the request. Other unsupported providers skip the MCP capability with a warning.
+    Hosted MCP is executed by the model provider itself, so MCP capabilities take effect only when the agent's active model is OpenAI or direct Anthropic (`anthropic:...`). On direct Anthropic the capability must set an explicit `require_approval: "never"` and use Bearer-token auth — see [Running on Anthropic models](MCP-Capabilities.md#running-on-anthropic-claude-models). AWS Bedrock Claude (`bedrock:...`) does not provide Anthropic's hosted MCP connector, so the capability is skipped there with a warning, as it is on any other unsupported provider.
 
 ### computer_use — desktop/browser automation
 

@@ -18,6 +18,16 @@ Notifications in PrimeThink are delivered through multiple channels to ensure yo
 
 The delay allows users who are actively using PrimeThink to see and dismiss notifications before email is sent, reducing unnecessary emails.
 
+## Where a Notification Appears
+
+Most notifications belong to a single group, and you only see them while you are working inside that group. Notifications about a chat message, a mention, or anything else that happens in a group's conversations behave this way.
+
+A small number of notifications are **system notifications** instead. These belong to no group, so they appear no matter which group you are currently looking at. They are for things you need to see even when you are somewhere else entirely.
+
+**Being added to a group** is one of these. If an administrator adds your existing account to another group, the membership takes effect immediately — there is no invitation to accept and no email to look for — so you get a system notification telling you which group you were added to, with a push notification as well. Selecting it takes you into the new group.
+
+This is different from being invited as a brand-new user: in that case you receive the invitation email and the notification does not apply, because there is no account yet to notify.
+
 ## Notification Settings
 
 You have granular control over how you receive notifications. Settings can be configured globally and on a per-chat basis.

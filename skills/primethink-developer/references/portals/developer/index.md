@@ -18,6 +18,7 @@ APIs, CLI, integrations, how-to guides, and architecture
 - [Integration and APIs](docs/Integration-and-APIs.md)
 - [PrimeThink CLI](docs/PrimeThink-CLI.md)
 - [Public Chat File Upload](docs/Public-Chat-File-Upload.md)
+- [Release notes](docs/Release-notes.md)
 - [Third party Integrations](docs/Third-party-Integrations.md)
 - [Video Analysis API](docs/Video-Analysis-API.md)
 - [Workspace Memory Architecture](docs/Workspace-Memory-Architecture.md)

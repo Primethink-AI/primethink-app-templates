@@ -62,12 +62,20 @@ Each organization appears as a distinct icon, and a single click lets you switch
 
 The currently active group remains highlighted, providing a clear visual indicator of your working context.
 
+If a group's session has expired, its tile offers a fresh sign-in rather than a switch that would only fail — selecting it takes you to the login screen, and signing in there replaces just that group's session and leaves your other groups alone.
+
 ### Managing Group Access
 
 At the bottom of the Group Switcher, you'll find essential tools for managing your group connections:
 
-- Joining new groups when you receive invitations
-- Creating a new group with one of your accounts — see [Adding and Creating Groups](/admin/Group-Management/#adding-and-creating-groups)
+- **Add groups** — sign in to another group you belong to, and add it to the ones you are already using
+- **Create group** — start a brand new group with one of your accounts, see [Adding and Creating Groups](/admin/Group-Management/#adding-and-creating-groups)
+
+When you add a group you already belong to under another account, you can sign in with a password or choose **Email me a magic link**. PrimeThink sends a link to that address; opening it lets you pick which of the account's groups to add to the ones you are already signed in to. That picker shows the groups you are already signed in to as well, marked as such, so you can see at a glance what adding this account would change — and it asks you to confirm before it drops a group you are currently signed in to. When the account has exactly one group and you are not signed in anywhere else, there is nothing to choose and you go straight into the app.
+
+Because you can reach the login screen while still signed in, it offers **Back to the app** to return to your chats without signing in again.
+
+When you add a group you already belong to under another account, you can sign in with a password or choose **Email me a magic link**. PrimeThink sends a link to that address; opening it lets you pick which of the account's groups to add to the ones you are already signed in to.
 
 ### Top actions
 
@@ -90,22 +98,18 @@ The left sidebar functions as your command center for chat and task management. 
 ### Top Control Section
 In the upper portion, you'll find essential controls that help you manage your daily workflow.
 
-### New Chat Button
+### Create Button
 
-The New Chat button serves as your primary entry point for starting conversations. When you click this button, you're not just creating a simple chat - you're initiating a new workspace that can evolve based on your needs. This button adapts to your current context, meaning the options available to you will change depending on your permissions and the type of work you're doing.
+The **Create** button is your single entry point for starting something new. It opens the Create page, where everything you can start is organized into tabs:
 
-When you click the New Chat button, you might notice that PrimeThink offers different types of conversations based on your needs. For example, you could start:
+- **Chat** — a new conversation, optionally with an AI assistant chosen for the work at hand
+- **Task** — browse the tasks available to you and start one
+- **Live App** — browse and open the Live Apps available to you
+- **DM** — pick a member and open a direct conversation with them
 
-A standard chat for quick discussions or note-taking
-A collaborative space for team discussions
-A specialized chat with an AI assistant for specific tasks like document analysis or proofreading
-A multi-participant workspace for larger team collaborations
+Which tabs you see depends on your permissions: the Task tab needs permission to view tasks, the Live App tab needs permission to view and run Live Apps, and the DM tab appears only where direct chats are allowed. The Task and Live App tabs let you search, page through results, and jump to what you used recently or marked as a favourite. Whichever tab you last used is the one that opens next time.
 
 Understanding when to use each type of chat can significantly improve your workflow. For instance, if you need to analyze a legal document, starting a chat with the Legal Document Analyzer assistant will provide you with specialized tools and capabilities specific to that task.
-
-### Tasks Management
-
-Next to it, the Tasks Management button helps you start new predefined chat workflows ("Tasks") with a click of a button.
 
 ## Filtering and Organization Tools
 
@@ -115,6 +119,10 @@ The filter system includes a dropdown menu for selecting chat types (such as Sta
 The middle section displays your conversations in an organized list. Each chat entry shows relevant information like the chat name and timestamp, with visual indicators helping you quickly identify different types of conversations. The list updates in real-time to show new messages, status changes and unread messages.
 
 The chat are ordered by last activity (last first) and with re-order based on usage.
+
+The heading above the list tells you what you are looking at: **All Chats**, **Unread Chats** when the unread filter is on, or the name of the workspace you have selected, with the workspace name highlighted. A long workspace name is shortened to one line.
+
+While an AI agent is writing a reply in a chat, that chat's entry shows an animated responding indicator, so you can see work in progress in a conversation you are not currently looking at. The indicator appears and clears on its own as responses start and finish, and it survives a refresh or a reconnection.
 
 ### Chat types
 The two main chat types you interact with in the chat list are:
@@ -156,6 +164,14 @@ Messages appear in a chronological thread, with clear visual distinction between
 Consecutive system notices of the same kind on the same day are condensed for participant joins and documents added to the chat. The summary names up to three items and then shows how many others are included. Select a grouped join notice to see the participant list, or select a grouped document notice to see its documents and open their details. A normal chat message, a different notice kind, or a day boundary starts a new group; other system notices remain separate.
 
 Message bubbles, sender names, and participant avatars use a consistent participant tint to make multi-person and multi-agent conversations easier to scan. The palette adapts to light and dark themes, while your own messages use the PrimeThink brand tint. Public-chat guest and agent color overrides continue to apply, restyled to fit the active theme.
+
+When the compact message layout is in use — that is, whenever "Use bubbles in chat" is turned off, and always in public chats — the thread is arranged as follows:
+
+- **Consecutive messages are grouped.** Messages from the same sender that arrive within five minutes of each other are shown as one block, with the avatar, name, and header printed only on the first message.
+- **Each message carries its time.** The clock time sits beside the message; hovering it shows the full date and time.
+- **Replies show what they answer.** A reply displays a short reference to the message it responds to, which you can select to jump to the original.
+- **Actions appear on the message.** Pointing at a message (or long-pressing it on a touch device) reveals a small action bar with the message actions and a row of quick reactions; **More** opens the full emoji picker, which can be searched.
+- **Streaming replies can be stopped.** While an assistant is still writing, a **Stop** control appears on the message. If a message failed to send, a **Retry** control appears in its place.
 
 #### Message Interaction Features
 
@@ -201,6 +217,10 @@ Share files and documents relevant to your discussion. The system handles variou
 
 > IMPORTANT: when you attach a file you also have the options to add them as documents
 
+**Attach Screenshot** — in a chat that is showing a Live App, the attachment menu also offers *Attach Screenshot*, which captures the app view as it currently looks and attaches it to your message. This is handy for asking the assistant about what you are seeing. It is available in the web app and in the iOS and Android apps, and only appears while a Live App is on screen.
+
+Once a message has attachments, its attachment strip can be collapsed and expanded, and it stays that way while the conversation updates around it. When there is more than one file, **Download all** saves them in one action and tells you if any of them could not be downloaded. Opening an image shows its filename and its position in the set, so you can page through the message's images and download the one you are looking at.
+
 ## Current Chat Context Panel (Right Sidebar)
 
 The Right Context Sidebar serves as your companion in PrimeThink, adapting its contents based on the selected capabilities of the chat and the default virtual assistant. Every configuration, option, or feature you see in the sidebar is contextualized to the current chat context and the default virtual assistant.
@@ -208,6 +228,8 @@ The Right Context Sidebar serves as your companion in PrimeThink, adapting its c
 ## Working with the Sidebar Tools
 
 Understanding how to leverage the sidebar's context-specific tools can significantly improve your workflow. The sidebar is composed of multiple tabs, each with their own set of tools and information.
+
+Which tab opens first depends on the chat: a Live App chat opens on **Messages**, since the conversation is not otherwise on screen; a direct chat opens on **Settings**; and any other chat opens on **Info**. A `tab` parameter in the URL overrides this, and you can switch tabs freely afterwards.
 
 ### Info tab
 The Info tab provides essential information and configuration about the current chat.
@@ -330,6 +352,8 @@ The Members tab provides a list of all participants in the current chat. They ca
 
 ### Members Tab Actions Bar
 - **Add Members**: Invite new members or virtual assistants to the chat.
+
+**Add Members** opens a picker with separate tabs for people and AI assistants, and a search box for narrowing a long list. Tap the ones you want — each becomes a chip at the top so you can see your selection as you build it — then confirm to invite them all at once. Anyone already in the chat is left out of the list, so you cannot invite the same member twice.
 
 Each member entry shows:
 - Profile picture or avatar initials in a circle

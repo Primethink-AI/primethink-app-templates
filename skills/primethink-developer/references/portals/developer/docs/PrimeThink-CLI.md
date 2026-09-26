@@ -21,6 +21,11 @@ The PrimeThink CLI is a powerful command-line tool that allows you to interact w
 - Build, publish, synchronize, and run browser tests against Live Apps
 - Export a task's config to a git-friendly JSON file and re-import it in another environment
 - Search documents, chats, collections, and messages semantically
+- Transcribe, translate, diarize, and synthesize audio, and analyze video
+- Organize chats into workspaces, and manage groups, members, and tags
+- Read notifications, look up users, and manage group and user settings
+- Build, run, and simulate task evaluations
+- Create and reorganize folders, and version the documents inside them
 - Generate AI images from text prompts
 - Integrate PrimeThink into scripts and automation workflows
 
@@ -49,6 +54,18 @@ irm https://primethink.ai/cli/install.ps1 | iex
 ```bash
 pip install primethink-cli
 ```
+
+#### Optional extra: agent tools
+
+The CLI wheel also carries the **agent tools plugin**, which exposes PrimeThink's management surface to agents as LangChain tools. It is off by default so that ordinary installs stay lean, and it is only needed where agents actually run:
+
+```bash
+pip install 'primethink-cli[agent-tools]'
+```
+
+The extra pulls in `langchain-core` and `pydantic` and needs Python 3.9 or newer. Without it the plugin's entry point stays inert; if something calls it anyway, it fails with a message naming the extra to install rather than an obscure import error.
+
+Because the plugin now lives inside the CLI wheel, the plugin and the CLI helpers it uses can never be different versions. If you previously installed the standalone `primethink-agent-tools` distribution, uninstall it before adding the extra so the two do not shadow each other.
 
 ### Install via Homebrew (macOS & Linux)
 
@@ -107,7 +124,7 @@ Check who you're authenticated as:
 pt whoami
 ```
 
-This prints your user details and groups as JSON — if it succeeds, your token works. It also takes `--profile`, which makes it the quickest way to verify which account each profile points at:
+This prints your user details and groups as JSON — if it succeeds, your token works. It also reports `active_group` (the group that agent, chat, capability, and settings commands resolve against) and `configured_providers` (the LLM providers your workspace holds an API key for), so you can tell at a glance which group a profile acts in. Both are best-effort: a token that cannot read them still gets the user and group list. It also takes `--profile`, which makes it the quickest way to verify which account each profile points at:
 
 ```bash
 pt whoami --profile production | jq '.user.email'
@@ -146,8 +163,98 @@ pt live-app new ./my-react-app --no-tailwind --no-flowbite
 
 The six supported starters are intentionally blank canvases. They retain only the selected framework and dependencies plus required PrimeThink wiring, such as the host-theme bridge and deployment configuration. They do not include a sample interface, entities, colors, layout, or application behavior. Build the UI and ChatDB data layer for your application rather than expecting sample CRUD code from the template.
 
+Scaffolding also names the app after the directory you created it in, so it does not ship with the template's identity in its browser tab. `pt live-app new word-painter` sets the page title to `Word Painter` and the package name to `word-painter`, and says so on the last line of its output:
+
+```text
+Created PrimeThink Live App at word-painter
+Template: react-default (react, tailwind=yes, flowbite=yes)
+Named "Word Painter" in index.html, package.json — edit if you want something else.
+```
+
+It is deliberately best effort: a template that has no such files is left alone, and a file it cannot read is skipped rather than failing the scaffold. Any other keys in `package.json` are preserved. Change the name afterwards if you want something other than what the directory name produced.
+
+!!! tip "Scaffolding into a `sandbox/` subfolder still names the app properly"
+    Some repositories keep each app's source in a fixed subfolder — `word-painter/sandbox`, for example. A directory name that describes a *slot* rather than an app is ignored, and the parent directory names the app instead:
+
+    ```text
+    pt live-app new word-painter/sandbox   ->  "Word Painter" / word-painter
+    pt live-app new my-cool-app            ->  "My Cool App"  / my-cool-app
+    ```
+
+    The names treated as slots are `sandbox`, `app`, `apps`, `src`, `dist`, `web`, `client` and `frontend`. Without this, every app scaffolded under such a convention was titled "Sandbox" — which is easy to miss until it is the browser tab title of a published app.
+
 !!! important
     Read the generated `README.md` before building or deploying. The default Vite project has a build step and deploys the files inside `dist/`; no-build templates deploy their generated HTML entry file directly. Preserve the generated PrimeThink deployment and host-theme wiring.
+
+#### The React template checks your work as it builds
+
+The React starter's `npm run build` lints first and verifies the built artifact afterwards, so a project that builds is a project that can actually be deployed. Both steps are also available on their own, as `npm run lint` and `npm run verify:dist`.
+
+The lint step includes rules for the PrimeThink mistakes that are easy to make and hard to spot at runtime, among them:
+
+- reading an AI reply from the wrong property instead of the message itself
+- passing `pt.onEntityChanged` its arguments in the wrong order
+- treating a `pt.list()` result as though it were wrapped in metadata when it is not
+- persisting state to browser storage instead of through ChatDB
+- posting an app-driven message without marking it hidden
+- calling `pt` from inside a React state updater
+- using a Flowbite component that crashes under this template's React version
+
+The verification step checks the build output is a shape PrimeThink can serve — a flat artifact with the expected entry file — rather than letting a broken deployment be discovered in a chat.
+
+#### It also ships tests to write into
+
+The React starter comes with a place to put your acceptance tests and a browser test suite already wired up:
+
+```bash
+npm install
+npx playwright install chromium   # once per machine
+npm test                          # acceptance tests, run with Node's own test runner
+npm run test:ui                   # Playwright, against the built app
+```
+
+`tests/acceptance.test.mjs` is a deliberately empty skeleton: the template's advice is to transcribe what the app must do into it *before* building the interface, and to keep domain logic in plain modules so it can be tested without a browser or a stubbed `pt`. `tests/ui.spec.mjs` covers the things that are easy to break and tedious to check by hand — that the host theme reaches the app, that it renders at all, and that its appearance has not drifted.
+
+!!! warning "The first `npm run test:ui` run fails on purpose"
+    Playwright has no screenshot baselines to compare against yet, so it writes them and reports the run as failed. Look at the images, commit the ones that are right, and run again.
+
+**Each project gets its own preview port.** The browser suite builds the app and serves it on a port derived from the project's own directory, in the range 4200–4899. This matters more than it sounds: when every scaffold used the same port, a second project's suite would quietly adopt a preview server left running by a *different* app and test that instead — a suite that passes while proving nothing, or fails against another app's markup.
+
+Two consequences worth knowing:
+
+- An already-running preview is **not** reused by default. Every run builds and serves this project, and if the port is occupied the run fails loudly rather than testing somebody else's build.
+- Set `PT_REUSE_PREVIEW=1` to reuse a preview you started yourself while iterating, and `PT_PREVIEW_PORT` to move off a port that collides. Two projects can derive the same port, which is exactly why reuse is opt-in.
+
+`PT_CHROME` points the suite at an already-installed Chrome, for machines where `npx playwright install` is unreliable.
+
+#### What the browser suite cannot tell you
+
+`vite preview` serves your built files as static files. It is **not** the platform: there is no `window.pt`, so persistence, reads and writes, and real-time sync are not exercised at all. Layout, the theme bridge, keyboard and focus behaviour, and screenshots are.
+
+The starter ships two things to close that gap:
+
+- **`tests/pt-stub.mjs`** — one canonical browser stub, so screens that need a `pt` to render can be tested. It is backed by `sessionStorage`, which makes *write, reload, assert it is still there* a test an app holding its state in component state will fail. It **throws** on any method it does not implement rather than returning `undefined`, so it cannot quietly teach you an API that does not exist. Use it for rendering and flow only — never treat it as evidence about how the platform behaves.
+- **`tests/live.mjs`** — the app loaded the way PrimeThink actually serves it, against a real chat:
+
+    ```bash
+    PT_API_KEY=... node tests/live.mjs <chat-uuid>
+    ```
+
+    It asserts that `pt` is injected and real, that the app renders, and that a row it writes survives a reload. Run this before concluding an app works.
+
+#### The shipped primitives carry no colours of their own
+
+Alongside the tests the starter includes a few primitives worth reusing rather than rewriting: helpers for reading rows and counts out of a `pt.list()` result, and table and modal components that forward the attributes those elements need, so column spans and accessibility attributes survive.
+
+Their colour comes entirely from seven `--pt-*` CSS variables declared in `index.css` — **no palette classes and no `dark:` variants**. A project using its own design tokens repoints those variables once:
+
+```css
+:root { --pt-surface: var(--color-card); --pt-on-surface: var(--color-ink); }
+```
+
+That is deliberate, and it replaces having to override the components at every call site. Overriding a Tailwind colour with another Tailwind colour is unreliable for a reason worth understanding before you try it — see [the colour-override trap](/admin/Live-Apps-Tailwind-v4/#when-two-colour-utilities-collide-alphabetical-order-decides). A test in the starter fails the suite if a palette colour or a `dark:` variant creeps back into these components.
+
+This local suite is separate from the skill's YAML-plan runner described under [Run deterministic Live App UI tests](#run-deterministic-live-app-ui-tests): these tests run against your project on your machine, while the YAML plans run against an app already deployed into a chat.
 
 ### Install the Live App developer skill
 
@@ -161,7 +268,158 @@ pt install-developer-skill --dir ~/.kiro/skills  # custom skills directory
 
 The installer downloads the complete skill from the public PrimeThink templates repository, including its references and reusable libraries. It does not require a PrimeThink token. An existing installation is not overwritten unless you explicitly pass `--force`.
 
+The install writes a `VERSION` file into the skill directory recording which revision you have, and prints where it went:
+
+```text
+Installed skill 'primethink-developer' to ~/.claude/skills/primethink-developer
+Included 164 files from skills/primethink-developer, including subdirectories.
+Version marker: ~/.claude/skills/primethink-developer/VERSION (ref v1.2.3)
+Compatible agents will pick it up on their next session in that scope.
+```
+
+The file records the ref, the source repository and path, the file count, and when it was installed. Quote it when reporting a problem with the skill — without it, neither you nor anyone else can tell which revision the behaviour came from. Writing the marker is best effort: if it cannot be written the install still succeeds and says so, naming the ref on the same line.
+
 `pt install-developer-skill` is distinct from `pt install-skill`: the developer skill covers building PrimeThink Live Apps and integrations, while the CLI skill teaches compatible agents the general CLI command map and workflows.
+
+### Publishing and testing projects
+
+Four orchestration commands turn a **project directory** into a PrimeThink task, or into a test chat for trying it out (temporary by default, `--permanent` when you mean to keep it). They print human-readable progress lines, **not JSON**, so parse the last line rather than piping to `jq`.
+
+| Command | Creates | Needs `GOAL.md` | Final line |
+|---|---|---|---|
+| `pt task publish DIR` | a task (no chat) | required, non-empty | `Task ID: 81` |
+| `pt live-app publish DIR` | a task + `@app` files | optional | `Live App task ID: 31` |
+| `pt task test DIR` | a chat | required, non-empty | `Chat URL: …/chats/<id>` |
+| `pt live-app test DIR` | a chat + `@app` files | optional | `Chat URL: …/chats/<id>` |
+
+All four use the same project-file conventions, and every file is optional except where the table says otherwise: `GOAL.md` (the task goal), `.name.config` (name; defaults to the directory name), `.description.config` (description; defaults to the name), `INITIAL_PROMPT.md` (initial prompt), and `.image.png` (task image). Command-specific handling is noted below — `.image.png`, for example, is read only by `pt live-app publish`, since the test commands have no task to attach it to.
+
+#### Capture the ID the command prints
+
+```bash
+pt task publish ./tasks/morning-briefing --virtual-assistant-id 7
+```
+
+```text
+Created task 81 from tasks/morning-briefing
+Task ID: 81
+```
+
+Capture that ID for later updates, and re-run with `--task-id "$TASK_ID"` to update instead of creating a duplicate:
+
+```bash
+out=$(pt task publish ./tasks/morning-briefing --virtual-assistant-id 7) || { echo "publish failed"; exit 1; }
+printf '%s\n' "$out"
+TASK_ID=$(printf '%s\n' "$out" | awk -F': ' '/^Task ID: /{print $2}')
+[ -n "$TASK_ID" ] || { echo "no Task ID in output"; exit 1; }
+```
+
+**Check the status *and* the value — neither alone is enough.** Capture `pt`'s output
+instead of piping it into `awk`: a pipeline would report `awk`'s `0` rather than `pt`'s
+status, so a failed publish would yield an empty `TASK_ID` and the follow-up run would
+create a duplicate task instead of updating one. The status alone is not enough either — the
+publish command can print its ID line and still exit non-zero, because a fatal file-upload
+failure is reported after the sync summary, so a non-empty ID may still come from a run that
+did not fully succeed.
+
+`pt live-app publish` prints richer progress and ends with `Live App task ID:`:
+
+```text
+Created task 31 from decision-board
+Created task version Production
+Synchronizing 3 file(s) from decision-board/dist
+  Uploaded index.html
+  Updated app.css
+  Unchanged logo.svg
+App sync complete: 1 uploaded, 1 updated, 1 unchanged, 0 failed
+Uploaded task image decision-board/.image.png
+Live App task ID: 31
+```
+
+```bash
+out=$(pt live-app publish ./decision-board --virtual-assistant-id 7) || { echo "publish failed"; exit 1; }
+printf '%s\n' "$out"
+APP_TASK_ID=$(printf '%s\n' "$out" | awk -F': ' '/^Live App task ID: /{print $2}')
+[ -n "$APP_TASK_ID" ] || { echo "no Live App task ID in output"; exit 1; }
+```
+
+The same two checks apply here, and the upload case is the reason the value check is not
+enough on its own: `live-app publish` prints `Live App task ID: 31` before it reports a fatal
+file-upload failure, so `$APP_TASK_ID` can be set on a run that exited non-zero.
+
+#### Neither publish command sets task fields
+
+**The publish commands have no task-field flags.** The entire option set of `pt task publish` is `--task-id`, `--virtual-assistant-id` (required), `--profile`, and `--api-url`; `pt live-app publish` adds only `--app-dir` and `--version-name`. A newly published task is always created as `type: private`, `status: published`, `chat_type: standard` (`page_type: html` for a Live App), with global memory, chat history, search-in-chat, search-in-documents, summary, documents/collections, scheduled jobs, email integration, share-action and run-immediately all **off**. To change any of that, follow up with `pt task update`:
+
+```bash
+pt task update "$TASK_ID" --docs-enabled --scheduled-jobs --global-memory --type public
+```
+
+That follow-up is safe against re-publishing: an update run (`--task-id`) only PATCHes `name`, `description`, `goal`, `initial_prompt`, `virtual_assistant_id`, and `page_type`, so toggles you set server-side survive.
+
+#### Keep one test chat instead of many
+
+`--chat-id` is *optional*: omitting it creates a **new** chat every run — that is the default, not something you opt into. Store the ID so subsequent runs update the same chat instead of littering the workspace with new ones.
+
+```bash
+pt task test ./tasks/morning-briefing --permanent --open
+```
+
+```text
+Created permanent chat 3f2a-bb…
+Updated goal for chat 3f2a-bb…
+Chat URL: https://app.primethink.ai/chats/3f2a-bb…
+```
+
+First run — create and record, writing `.chat-id` only once a chat ID was actually captured:
+
+```bash
+# first run — create and record
+out=$(pt task test ./tasks/morning-briefing --permanent) || { echo "test deploy failed"; exit 1; }
+printf '%s\n' "$out"
+CHAT_ID=$(printf '%s\n' "$out" | sed -n 's#^Chat URL: .*/chats/##p')
+[ -n "$CHAT_ID" ] || { echo "no Chat URL in output"; exit 1; }
+printf '%s\n' "$CHAT_ID" > ./tasks/morning-briefing/.chat-id
+```
+
+Write the file only after checking both the status and the ID — redirecting the command
+straight into `.chat-id` truncates it the moment a run fails, losing the chat you were
+iterating on. The status check alone would miss a run that exits `0` without printing a
+`Chat URL:` line; the ID check alone would miss a run that printed the URL and then failed.
+
+Later runs — reuse:
+
+```bash
+pt task test ./tasks/morning-briefing --chat-id "$(cat ./tasks/morning-briefing/.chat-id)"
+```
+
+The same convention works for a Live App, which is the fastest way to iterate after each rebuild:
+
+```bash
+# first run — create and record
+out=$(pt live-app test ./decision-board --permanent) || { echo "test deploy failed"; exit 1; }
+printf '%s\n' "$out"
+CHAT_ID=$(printf '%s\n' "$out" | sed -n 's#^Chat URL: .*/chats/##p')
+[ -n "$CHAT_ID" ] || { echo "no Chat URL in output"; exit 1; }
+printf '%s\n' "$CHAT_ID" > ./decision-board/.chat-id
+
+# After each rebuild, redeploy into that same chat
+npm run build
+pt live-app test ./decision-board --chat-id "$(cat ./decision-board/.chat-id)"
+```
+
+`.chat-id` is a convention for the developer or agent to follow, not a CLI feature — nothing reads it automatically. Add it to `.gitignore`; it identifies one person's test chat.
+
+!!! tip "Use `--permanent` for any chat you intend to store"
+    The default is `--temporary`, which is right for a one-shot check but a poor thing to pin an ID to. Only a newly created chat honors `--temporary` / `--permanent` and `--workspace-id`; both are ignored when `--chat-id` is given.
+
+#### Behavior shared by all four
+
+- **`test` never touches a task; `publish` never touches a chat.** Testing does not update the published task — re-run `publish` for that.
+- **Exit codes**: `0` on success, `1` on any failure, with the message on stdout (`Error: 404 - …`, `Error connecting to API: …`, or `Error: <reason>` for a missing or empty `GOAL.md`, a missing `index.html`/`canvas.html` entry, a non-flat artifact, or per-file upload failures).
+- A failed task-version creation is only a `Warning:` — publishing still succeeds. Failed **file** uploads are fatal and are reported together after the summary line.
+- The chat URL host is derived from the active profile's API URL (`api.` → `app.`); override it with `--web-url`. `--open` launches a browser, so skip it in CI.
+- `pt live-app test` uploads to `chats/<id>` and `pt live-app publish` to `tasks/<id>`, but both land in the `@app` folder of their owner.
 
 ### Publish a Live App task
 
@@ -213,6 +471,8 @@ pt live-app test ./my-app --workspace-id WORKSPACE_ID --permanent
 The command supports the same `--app-dir`, `--version-name`, `--profile`, and `--api-url` choices as publishing. `--temporary` / `--permanent` and `--workspace-id` apply only when creating a chat. By default, the URL is derived from the selected API URL: a host beginning with `api.` is mapped to `app.`, while custom and development hosts are used unchanged. Pass `--web-url` to override the printed/opened application URL. A non-empty `GOAL.md` is applied when present; it is optional for Live App tests.
 
 Existing app documents are versioned, missing documents are uploaded, identical documents are skipped, and any failed file stops the command with a summary. As with publishing, files absent from the local artifact are not removed from the chat.
+
+The chat's page type is set to `html` on create and forced to `html` on reuse. Artifact discovery, `--app-dir`, flatness, and versioning behave exactly as in `pt live-app publish`, with one difference: `.image.png` is **not** uploaded in test mode, since there is no task to attach it to.
 
 ### Switch a chat renderer
 
@@ -275,6 +535,33 @@ scenarios:
 ```
 
 The runner exits `0` when every step passes, `1` when a test step fails, and `2` for invalid plans or environment errors. See the [complete UI-testing guide](https://github.com/primethink-ai/primethink-app-templates/blob/main/skills/primethink-developer/ui-testing/README.md) for supported actions, assertions, target types, runner options, and result formats.
+
+#### Test more than one screen size
+
+A plan may declare an optional `viewports` matrix. The runner then opens an isolated browser context per entry, repeats every scenario across the matrix, and prefixes each result ID with the viewport name, for example `mobile::navigation.open`. A scenario can opt into a subset with its own `viewports` list:
+
+```yaml
+viewports:
+  - { name: desktop, width: 1280, height: 800 }
+  - { name: tablet, width: 768, height: 1024 }
+  - { name: mobile, width: 390, height: 844 }
+
+scenarios:
+  - id: mobile-navigation
+    viewports: [mobile]
+    steps:
+      - { id: navigation.open-page, action: navigate, url: /chats/CHAT_UUID }
+      - { id: navigation.no-overflow, action: expect_no_horizontal_overflow }
+      - { id: navigation.open, action: click, target: { testid: mobile-nav-trigger } }
+      - { id: navigation.dialog, action: expect_visible, target: { role: dialog, name: "Navigation" } }
+      - { id: navigation.escape, action: press, key: Escape }
+      - { id: navigation.closed, action: expect_hidden, target: { role: dialog, name: "Navigation" } }
+```
+
+Alongside the matrix, plans can use the `scroll` and `set_viewport` actions and the `expect_no_horizontal_overflow`, `expect_stuck_to_top`, `expect_in_viewport`, and `expect_attribute` assertions to check that an application shell keeps its top bar reachable, swaps wide navigation for an accessible drawer, and avoids horizontal overflow on narrow frames.
+
+!!! note
+    Omitting `viewports` keeps the runner's original single-context behavior and unprefixed step IDs. Matrix contexts isolate browser state only — they share the same ChatDB data, so scenarios that create or delete rows should use unique fixture values, clean up after themselves, or run at a single viewport.
 
 !!! warning "Verify browser authentication and review test plans"
     By default, the runner resolves the PrimeThink API token from `PRIMETHINK_TOKEN` or the active CLI profile and seeds the documented local-storage keys before the app loads. Verify those keys against the current web application. If it uses a different key or cookie-based session, configure the plan's `auth` block or pass `--storage-state` with a previously saved authenticated browser session. Never commit tokens or storage-state files.
@@ -718,9 +1005,31 @@ pt collection sync-to 42 ./knowledge-base --recursive
 pt collection sync-from 42 ./kb-backup
 ```
 
+### Create, inspect, copy, and tear down a collection
+
+```bash
+# Create — --type skill and --public are optional
+pt collection create --name "Knowledge base"
+pt collection create --name "Support skill" --type skill --public
+
+# Inspect one collection
+pt collection get 42
+
+# Rename, or trigger re-indexing (PATCH semantics)
+pt collection update 42 --name "Renamed KB"
+pt collection update 42 --indexed
+
+# Duplicate a collection — note this one takes the collection's UUID, not its numeric ID
+pt collection copy 3f7c1b9e-2d4a-4f8e-9c11-6b2a5d0e7f31
+
+# Remove uploaded files, or the whole collection (both prompt unless you pass --yes)
+pt collection delete-file 42 10 11 12
+pt collection delete 42
+```
+
 ## Semantic Search
 
-The `pt search` group finds content by meaning rather than exact keywords. There are four scopes:
+The `pt search` group finds content by meaning rather than exact keywords. There are five scopes:
 
 ```bash
 # Within one chat (messages; optionally its documents and collections)
@@ -734,9 +1043,13 @@ pt search documents "refund policy" --collection-name kb
 
 # Across chat messages (--collection-name is required), with optional filters
 pt search messages "standup notes" --collection-name msgs --chat-id 5 --user-id 2
+
+# Among the images in a collection, by example image, by description, or both
+pt search images 42 --query "a red sports car"
+pt search images 42 --image ./example.jpg --top-k 5
 ```
 
-All four accept the same tuning options:
+All of them accept the same tuning options:
 
 - `--search-type` — `mmr` (server default), `similarity`, or `similarity_score_threshold`
 - `--top-k` — how many results to return
@@ -746,6 +1059,7 @@ Extras per command:
 
 - `pt search chat` has scope toggles: `--in-chat/--no-in-chat`, `--in-documents/--no-in-documents`, `--in-collections/--no-in-collections`
 - `pt search collection` accepts `--metadata '{"document_name": "contract.pdf"}'` to filter by document metadata
+- `pt search images` takes the numeric collection ID and needs at least one of `--image` or `--query`
 
 > Note: `--collection-name` (for `documents`/`messages`) is a **vector store collection name**, not the numeric collection ID used by `pt collection` commands.
 
@@ -790,6 +1104,20 @@ pt agent create \
 - `--model` — which model the agent uses
 - `--access-type` — `private` (default), `group`, `task`, `system`, or `catalog`
 - `--tag-ids 3,4`, `--extra '{"key": "value"}'`, `--help-text`, `--help-url`
+- `--capability` — attach a capability by its **code** or its numeric ID, repeated once per capability. Codes are portable between environments; IDs are not, so prefer codes in anything you check into version control. If the server drops a capability you asked for — usually one the group has not enabled — the response carries a `warnings` list saying so instead of quietly creating a weaker agent.
+
+To see which IDs a set of codes maps to in the environment you are pointed at:
+
+```bash
+pt capability resolve web_search code_interpreter
+```
+
+### Give an agent an avatar
+
+```bash
+pt agent upload-image 7 ./avatar.png
+pt agent delete-image 7
+```
 
 ### Update or delete an agent
 
@@ -812,6 +1140,9 @@ pt chat send --agent 7 --message "Analyze this data" --files data.csv
 ## Managing Tasks
 
 The `pt task` group lets you create, inspect, update, and version tasks from the terminal.
+
+!!! note "Evaluations and simulations are not under `pt task`"
+    Evaluating a task and simulating a conversation with it are task-shaped operations that live in their own top-level group, `pt eval` — not as subcommands of `pt task`. `pt task --help` now says so too. See [Evaluating and Simulating a Task](#evaluating-and-simulating-a-task).
 
 ### Create a task
 
@@ -875,6 +1206,21 @@ pt task publish ./briefing --task-id 99 --virtual-assistant-id 7
 
 When updating, the command changes only the project-backed fields — name, description, goal, initial prompt, and assigned agent — and preserves unrelated server fields. This differs from `pt task import`, which creates a new task from portable JSON.
 
+### Launch a task into a chat
+
+Launching starts the task the way opening it in the app does: the new chat inherits the task's goal, default agent, settings, documents, collections, and scheduled job, and the task's initial prompt is posted.
+
+```bash
+pt task launch 280
+pt task launch 280 --workspace-id 738
+pt task launch 280 --workspace-id ca74dfc4-eb41-4c3f-ae53-b6b1c415617f --name "Collector (CTO)"
+pt task launch 280 --version 3
+```
+
+`--workspace-id` takes either a numeric ID or a UUID; omit it for a top-level chat. The command prints the new chat as JSON and then a `Chat URL:` line, with the web address derived from your API URL (`api.` becomes `app.`) unless you pass `--web-url`. If the API accepts the launch but answers with nothing usable, the command fails with a non-zero status and no `Chat URL:` line rather than printing a half-built result.
+
+`pt chat create --from-task-id 280` does the same thing through the generic chat command, which is handy when you are already passing other `chat create` options.
+
 Use `pt task test` to apply the required `GOAL.md` to a temporary test chat, or reuse an existing chat. Existing chats are switched to normal chat mode.
 
 ```bash
@@ -884,6 +1230,29 @@ pt task test ./briefing --workspace-id WORKSPACE_ID --permanent --open
 ```
 
 `--temporary` / `--permanent` and `--workspace-id` apply only to newly created chats. By default, the URL is derived from the selected API URL: a host beginning with `api.` is mapped to `app.`, while custom and development hosts are used unchanged. Pass `--web-url` to override the printed/opened chat URL. The command validates `GOAL.md` before creating or changing a remote chat.
+
+`pt task publish` can set the task's type and feature toggles as it publishes, so a project no longer has to be fixed up afterwards:
+
+```bash
+pt task publish ./briefing --virtual-assistant-id 7 \
+  --type group --chat-history --docs-enabled --scheduled-jobs
+```
+
+`--type` sets the task's visibility, and each toggle has a `--no-…` form to turn it off explicitly: `--global-memory`, `--chat-history`, `--search-in-chat`, `--search-in-documents`, `--summary-enabled`, `--docs-enabled`, `--scheduled-jobs`, `--email-integration`, `--share-action`, `--public-chat`, and `--run-immediately`.
+
+The same settings can live in the project instead, in an optional `task.json` beside the other project files. It uses the portable field names of `pt task export`/`pt task import`:
+
+```json
+{ "type": "group", "chat_history": true, "documents_and_collections_enabled": true, "scheduled_jobs_enabled": true }
+```
+
+An option on the command line wins over `task.json`, which wins over the defaults. The fields that come from the project files or from options — `name`, `description`, `goal`, `initial_prompt`, `page_type`, `virtual_assistant_id` — are ignored in `task.json`, as are unknown keys and nulls. Only `pt task publish` reads it: `pt live-app publish` ignores it, and it is never uploaded as one of the app's files.
+
+Say nothing about a setting and you get the conservative default: a new task is `private` and `published`, a `standard` chat type, with every feature toggle off. So a task that needs its documents, chat history, or scheduling has to ask for them.
+
+When updating with `--task-id`, the command changes the project-backed fields plus whatever type and toggles the command line or `task.json` state, and leaves every other server field alone — so settings someone changed in the app survive a re-publish unless your project now states them.
+
+For the output these commands print, how to capture the task or chat ID, and the behavior shared with the Live App commands, see [Publishing and testing projects](#publishing-and-testing-projects).
 
 ### Duplicate, change visibility, or delete a task
 
@@ -943,6 +1312,286 @@ pt task upload-image 99 ./cover.png
 pt image generate --prompt "A lighthouse at dawn, watercolor" --output lighthouse.png
 pt image generate --prompt "Minimal flat team logo" --style illustration --size 512x512 -o logo.png
 ```
+
+## Working with Individual Messages
+
+Beyond sending and reading messages, `pt chat` can edit, retry, export, and remove them, and turn a whole conversation into a reusable task.
+
+```bash
+# Rewrite a message (the message ID is enough — no chat ID needed)
+pt chat edit-message 4567 "Corrected wording"
+
+# Ask the agent to answer again
+pt chat retry-message 4567
+
+# Export one message as Markdown (default), DOCX, or PDF
+pt chat export-message 123 4567 --format pdf --output answer.pdf
+
+# Remove one message, or empty the chat (both prompt unless you pass --yes)
+pt chat delete-message 123 4567
+pt chat clear-messages 123
+
+# Turn the conversation into a task
+pt chat save-as-task 123 --name "Weekly report" --goal "Summarize the week"
+```
+
+`delete-message` and `clear-messages` cannot be undone — `clear-messages` empties the entire conversation, so prefer archiving the chat if you only want it out of the way.
+
+## Organizing Chats into Workspaces
+
+Workspaces group related chats. The `pt workspace` group mirrors what the app's sidebar does.
+
+```bash
+# List workspaces, optionally narrowed to archived or pinned ones
+pt workspace list
+pt workspace list --pinned
+
+# Create one, with an optional goal that its chats inherit
+pt workspace create --name "Q4 planning" --goal "Ship the Q4 roadmap"
+
+# Rename, or change the goal
+pt workspace rename 8 "Q4 delivery"
+pt workspace set-goal 8 "Ship the Q4 roadmap"
+
+# Get it out of the way, or bring it to the top
+pt workspace archive 8
+pt workspace unarchive 8
+pt workspace pin 8
+pt workspace unpin 8
+
+# Move chats in and out
+pt workspace add-chat 8 123
+pt workspace remove-chat 123
+
+# Delete the workspace; --delete-chats also deletes the chats inside it
+pt workspace delete 8
+```
+
+`pt workspace remove-chat` takes only the chat ID — it detaches the chat from whichever workspace currently holds it. `delete` prompts unless you pass `--yes`, and `--delete-chats` is irreversible.
+
+## Groups, Members, and Tags
+
+`pt group` manages groups (organizations), who belongs to them, and which agents they offer.
+
+```bash
+# Browse groups and one group's details
+pt group list
+pt group get 3
+
+# Create and update — the API requires a name on update, so always pass --name
+pt group create --name "Acme Legal"
+pt group update 3 --name "Acme Legal EU"
+
+# Members
+pt group members 3 --search anna
+pt group remove-member 3 88
+pt group invite --email anna@example.com --role-id 4
+
+# Which agents the group offers
+pt group add-agent 3 7 9
+pt group remove-agent 3 9
+```
+
+`pt group invite` always invites into the *current* group (the one your profile resolves to), not the group ID you pass to other commands. `pt group delete` exists and is irreversible; it prompts unless you pass `--yes`.
+
+Tags label tasks, agents, capabilities, and collections. Every tag command names which of those four it applies to with `--model`.
+
+```bash
+pt tag list --model collection --only-used
+pt tag create --model collection --name legal --category dept
+pt tag assign --model collection --owner-id 42 --tag-id 3 --tag-id 5
+```
+
+`pt tag assign` **replaces** the object's whole tag set with the tags you pass, so include every tag you want to keep. Passing no `--tag-id` clears them all.
+
+## Folders and Document Versions
+
+Chats, collections, tasks, and agents all organize their files into folders, and the same four commands work under each of `pt chat`, `pt collection`, `pt task`, and `pt agent`. Listing a folder's contents stays with each group's existing `list-files` command.
+
+```bash
+pt chat mkdir 123 /reports
+pt collection rename-dir 42 /old-name new-name
+pt task move-dir 99 /drafts /archive --merge
+pt agent rmdir 7 /scratch --recursive --yes
+```
+
+`rmdir` prompts unless you pass `--yes`, and only removes a folder's contents when you add `--recursive`. `move-dir` takes the folder to move and the parent to move it under; `--merge` merges into an existing folder of the same name instead of failing.
+
+Documents in chats, collections, and tasks are versioned, with the same five commands under `pt chat`, `pt collection`, and `pt task`. Take the document ID from `list-files`.
+
+```bash
+# What versions exist
+pt chat list-versions 123 789
+
+# Add a version from a file, or from raw text
+pt chat new-version 123 789 ./handbook-v2.pdf --version-name Production
+pt task new-text-version 99 456 --text "Revised clause" --version-name Draft
+
+# Promote a version, or delete one (delete prompts unless you pass --yes)
+pt collection set-production-version 42 789 3
+pt collection delete-version 42 789 2
+```
+
+A version name must be either `Production` or `Draft`; the CLI rejects anything else before the request is sent.
+
+## Audio and Video
+
+`pt voice` and `pt video` hand a media file to the platform's AI. These calls do server-side work and use the longer 120-second timeout.
+
+```bash
+# Transcribe, or translate spoken audio into English text
+pt voice stt meeting.m4a
+pt voice translate interview.m4a
+
+# Label who spoke when
+pt voice diarize call.wav --speaker-count 2
+
+# Synthesize speech — saved to tts.mp3 unless you pass --output
+pt voice tts --text "Welcome aboard" --voice nova --output welcome.mp3
+
+# Describe what happens in a video
+pt video analyze demo.mp4 --extra-instructions "Focus on the UI steps"
+```
+
+`pt voice diarize` also accepts `--speaker-name` and `--speaker-file` to name a known speaker from a reference recording, and `--collection-id`/`--save-mode` to store the result. `pt voice tts` accepts `--voice`, `--model`, `--provider`, `--speed`, and `--instructions`; which voices and models are available depends on the providers your group has configured.
+
+## Listing Tasks
+
+```bash
+pt task list
+pt task list --search onboarding --type private --status all
+pt task list --page-type react --order-by name --order-dir asc
+```
+
+`--type` can be repeated to include more than one visibility. The output is paginated with `--page`/`--page-size`, and `--starred/--no-starred` narrows it to your starred tasks.
+
+## Finding People
+
+`pt user` searches the directory of users you are allowed to see, which is how you turn an email address or a name into the user ID other commands want. The underlying endpoint takes no query parameters, so `--search` and `--limit` are applied locally after the full list is fetched.
+
+```bash
+pt user list
+pt user search ann@acme.co
+pt user list --search support --limit 20
+```
+
+`--full` returns the richer records. Commands that add people to a chat accept `--email` as well as a user ID, resolving the address through this same directory — so an address you cannot see fails with an error rather than silently adding nobody.
+
+## Notifications
+
+```bash
+pt notification list --unread-only
+pt notification unread-count
+pt notification mark-read 4210
+pt notification mark-unread 4210
+pt notification mark-all-read
+pt notification delete 4210
+```
+
+`--unread-only` filters the fetched page locally, so combine it with `--page-size` if you are looking through a long history. Sending a notification is not something the API exposes, so there is no `send` command. `delete` prompts unless you pass `--yes`.
+
+## Group and User Settings
+
+`pt settings` is one interface over two different things: the key-value settings store that holds provider API keys, and the dedicated group and user property endpoints. Each key is routed to the right place for you, and unknown keys are rejected rather than silently stored.
+
+```bash
+pt settings list --scope group
+pt settings get timezone --scope user
+pt settings set default_agent 7 --scope group
+pt settings delete ANTHROPIC_API_KEY --scope group
+```
+
+Settings live at a `group` scope or a `user` scope, and `--scope` is required whenever a key is valid at both:
+
+- **group** — `default_agent`, `voice`, `voice_provider`, `new_chat_logic`, `group_mode`, `default_role`, `document_analysis_active`, `public_name`, `custom_theme_color`
+- **user** — `timezone`, `location`, `default_language`, `default_va`, `auto_archive_option`, `custom_theme_color`
+- any provider key ending in `_API_KEY`, stored as a secret at group scope unless you say otherwise
+
+!!! warning "Secrets are write-only"
+    A sensitive value is never returned. `list` and `get` tell you only whether a value is set and whether it is sensitive, so treat your own records as the only copy of a provider key you enter here.
+
+Values are checked before they are sent: an enum key rejects an unlisted choice, and a numeric or boolean key rejects a value of the wrong shape.
+
+## Evaluating and Simulating a Task
+
+`pt eval` drives the task evaluation flow end to end: build a plan of cases, run the task against it, and read the results. It works on the same evaluation data the app's task evaluation screen shows.
+
+!!! note "Evaluating a task requires managing it, not merely using it"
+    Every `pt eval` command — including listing and starting simulations — requires that you **own** the task, hold a role that has been granted access to it, or are a platform administrator. This is stricter than launching a task: being able to *run* a task does not let you read or create its evaluations.
+
+    This matters because evaluation data is not a summary. A simulation record carries the goal, the persona, the prompt and the response, which is the task's behaviour written out in full. A caller without management access to the task gets `403`, and a task id that does not exist gets `404` rather than an empty list.
+
+**Build the plan.** Each case pairs a question with the answer you expect and says how strictly to compare them — `exact` for a literal match, `similar` for a score based on how much of the expected wording the answer reproduces, `agent` to have an evaluator agent judge it.
+
+!!! note "How `similar` scores"
+    `similar` compares the answer and the expected response **word by word**, case-insensitively, and reports the overlap as a percentage. It is a wording comparison, not a semantic one: a correct answer phrased entirely differently will score low, so use `agent` when you care about meaning rather than phrasing. Long expected answers are scored correctly — an earlier defect collapsed the score for anything from roughly 200 characters up, marking faithful answers as mismatches.
+
+```bash
+pt eval list 99
+pt eval add 99 --user-query "What's your return window?" --ideal-response "30 days" --type similar
+pt eval add 99 --user-query "Refund a gift?" --ideal-response "Yes, store credit" --type agent --evaluator-agent-id 7
+pt eval update 99 12 --ideal-response "30 days from delivery"
+pt eval delete 99 12
+```
+
+`--examples` takes JSON holding good and bad sample answers, and `--chat-group` keeps related cases together as one conversation.
+
+**Configure how it runs.**
+
+```bash
+pt eval settings 99 --active --run-time daily --evaluator-agent-id 7 --pass-threshold 80
+```
+
+`--run-time` is `manual`, `daily`, `weekly`, or `monthly`; `--message-delay-ms` paces the messages sent during a run.
+
+`--pass-threshold` is a **whole percentage from 1 to 100** — `80` means a case must score 80% to pass. A fraction such as `0.8` is rejected by the CLI with a usage error rather than being sent on, and the same 1-100 bound is declared by the matching MCP and agent tools, so an AI agent calling them validates against the real range too.
+
+**Run it and read the results.**
+
+```bash
+pt eval run 99 --version 3
+pt eval runs 99
+pt eval run-get 99 405
+pt eval results 99 --run-id 405
+pt eval download 99 405 --output results.xlsx
+```
+
+`--model-override` runs the same plan against a different model, which is the quickest way to compare two models on one task.
+
+**Simulate a conversation.** Rather than one question at a time, a simulation has one agent play a user with a goal and a persona for several turns, then evaluates the transcript.
+
+```bash
+pt eval simulate 99 --simulator-agent-id 7 --goal "Return a damaged item" --max-turns 6 --persona "Impatient first-time customer"
+pt eval simulations 99
+pt eval delete-simulation 99 18
+```
+
+**A grade outlives the things that produced it.** A simulation result is the record of what the task scored, so deleting either of its inputs no longer takes the grade with it:
+
+- Delete the **simulator agent** and every grade it ever produced stays listed. The agent simply stops being named against them.
+- Delete the **chat** the simulation ran in — directly, by deleting its group, or by marking it temporary and letting it be reaped — and the grade stays listed too, without a transcript to open.
+
+`pt eval simulations` lists these results like any other. A result whose chat is gone carries no chat identifier, which is how you can tell its transcript is no longer available; there is nothing to fetch, and asking for it is not an error you need to handle beyond noticing the identifier is absent.
+
+Deleting the **task** still deletes its simulations, since a simulation is a measurement *of* that task and means nothing without it.
+
+**Reading a simulation's status.** Every simulation carries an explicit status, so a run that dies says so instead of appearing to still be going:
+
+| Status | Meaning |
+|---|---|
+| `queued` | Accepted, not started yet |
+| `started` | Running |
+| `finished` | Completed — the transcript was produced and evaluated |
+| `error` | Failed. The reason is in the result's response field |
+
+`error` is a **terminal** state: poll until a simulation reads `finished` *or* `error`, never for `finished` alone. A run that fails now reports why — the failure message is recorded on the result — including the cases that were previously invisible, such as a run that exceeded its time budget or one whose simulator agent was deleted before it started.
+
+Scheduled evaluation runs record failure the same way, so a timed-out run no longer reads as permanently in progress.
+
+!!! note "Not every possible death is reported"
+    This covers a run that raises and a run that hits its time limit. A worker process killed outright — out of memory, or terminated without warning — has no opportunity to record anything, so such a run can still sit in `started`. Treat a run that has been `started` far longer than its turn budget allows as suspect rather than assuming the status is authoritative.
+
+`pt eval delete`, `delete-simulation`, and the file download all prompt or write to disk, so they are excluded from what an AI agent using the tools plugin can do.
 
 ## Common Use Cases
 

@@ -3,6 +3,17 @@
 ## Generating an API Key
 In order to use the API, you will need to obtain an API key from the PrimeThink app. Go to `Settings > API Keys` and generate a new key.
 
+### The key's role
+
+An API key carries a role, and that role decides what the key may do and which [rate-limit tier](API-Reference.md#rate-limits) it gets. A key cannot be used to grant yourself more than you already have:
+
+- Ask for no particular role and the key is created with **your own** role.
+- A regular member can only create keys with their own role.
+- A Group Admin can assign any role in their group, except Super Admin and any role holding permissions they do not hold themselves.
+- A Super Admin can assign any role.
+
+So a key is always at most as privileged as the person who created it. Treat a key as equivalent to that role's access and revoke it when the person's own access changes.
+
 ## Using an API Key
 To use the API, you will need to include the API key in the request header:
 

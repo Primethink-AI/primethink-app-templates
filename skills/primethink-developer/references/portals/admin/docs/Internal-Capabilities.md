@@ -34,6 +34,7 @@ Some internal capabilities are conditionally enabled — or remapped — based o
 | Capability | Condition |
 |------------|-----------|
 | `base_dev` | Auto-added alongside `base` only in **development** environments. |
+| `base` | Provides `speak` only on a message sent in Voice Mode; the tool is absent otherwise. |
 | `canvas_toolkit` | Dropped unless the chat's page type is `html` or `react` (i.e. a Live Page). |
 | `subchats` | Remapped to `subchats_parent` (top-level chat) or `subchats_child` (chat with a parent) based on the chat hierarchy. |
 | `rag` | Adds `rag_documents` only when the chat has documents & collections enabled. |
@@ -53,7 +54,7 @@ Core tools available to all agents (notifications, generation, agent-to-agent co
 | `set_chat_title_name` | Rename/retitle the chat; auto-derives a title from history if none given. |
 | `notify_user` | Updates the "thinking" status message to tell the user what's happening. |
 | `send_push_notification_to_user` | Creates a notification for a user and pushes it (optionally with an email body). |
-| [`read_content_of_url`](Read-Content-of-URL.md) | Fetches a URL — reads web-page content as text, returns text/data files as-is, or saves downloadable files into the chat. |
+| [`read_content_of_url`](Read-Content-of-URL.md) | Fetches a public http(s) URL — reads web-page content as text, returns text/data files as-is, or saves the result into the chat when both a destination folder and filename are given. |
 | `hide_message_tool` | Hides an agent message that needs no response or is directed to someone else. |
 | `query_agent` | Calls another agent in the chat; returns its reply marked as "Response from the [name] Agent". |
 | `call_chat` | Calls a specific chat on another agent via the chat's mention name. |
@@ -61,6 +62,7 @@ Core tools available to all agents (notifications, generation, agent-to-agent co
 | `available_mentions` | Lists mentionable entities (users, agents, chats, tasks) available to the user, permission-filtered. |
 | `generate_image` | Generates images from text with style/size/reference-image options. |
 | `generate_voice` | Text-to-speech; supports single-speaker narration and multi-speaker dialogue. |
+| `speak` | Available only on a message sent in Voice Mode. Sends a short spoken script to the client to read aloud alongside the written reply — plain text only, capped at about forty seconds of speech. |
 
 ### `base_dev` — Base Dev Tools (development only)
 
@@ -107,6 +109,18 @@ Query-only access to the chat database.
 | Tool | Description |
 |------|-------------|
 | `web_search` | Searches the web via the configured provider (Auto, Tavily, Perplexity, Serper, or Internal). |
+
+#### Web search on OpenRouter models
+
+When the agent's model is an OpenRouter route and no external search key applies, the capability is served by OpenRouter's own `web` plugin. Two settings tune it:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `WEB_SEARCH_MAX_RESULTS` | `5` | Number of results OpenRouter attaches. Values below 1 are raised to 1. |
+| `WEB_SEARCH_ENGINE` | OpenRouter's own choice | One of `native`, `exa`, `firecrawl`, `parallel`, `perplexity`. An unset or unrecognized value is ignored, leaving OpenRouter to route the search itself. |
+
+!!! warning "The plugin searches on every turn"
+    Unlike a tool the model decides to call, OpenRouter searches before the model sees the turn and prepends the results — so an OpenRouter agent with this capability pays for a search on every message, including ones that need none. Three things bound that: the plugin is only attached to an agent that actually has the `web_search` capability, a configured external provider key (Tavily, Perplexity, or Serper) takes precedence over it, and `WEB_SEARCH_MAX_RESULTS` caps each search. Leave the capability off agents that do not need to search.
 
 ### `web_search_perplexity` — Web Search (Perplexity)
 
@@ -170,8 +184,50 @@ Added by the `rag` capability when documents are enabled.
 | `list_directories_and_documents` | Lists directories and documents at a path in the chat's document tree. |
 | `wait_until_document_text_extraction_is_finished` | Waits until a document is "Ready" or until timeout. |
 | `get_document_text` | Retrieves the full text (or a portion) of a document by ID. |
-| `save_document` | Saves content as a document (TXT, DOCX, MD, HTML, PDF, CSV, XLSX, CUSTOM). |
+| `view_image` | Lets the agent actually **see** an image document from the chat, rather than read its (usually empty) extracted text. Takes the document ID; the document must be linked to the current chat or its workspace and must be an image. A viewed image is also **pinned** — see below. Pass `unpin: true` to remove a previously pinned image from later turns. Anything that cannot be shown (not in this chat, not an image, bytes unreadable) comes back as a plain explanation instead of failing the turn. |
+| `save_document` | Saves content as a document (TXT, DOCX, MD, HTML, PDF, CSV, XLSX, CUSTOM), optionally into a destination folder. The filename must be a plain basename; a path-shaped name is rejected with a retry message rather than being split. |
 | `document_status` | Returns a document's processing/availability status. |
+| `attach_documents_to_response` | Attaches documents that already exist in the chat to the assistant's own reply, so the user gets them as message attachments. Documents are named by path (for example `/reports/q3.md`) or by numeric ID, must belong to the current chat, and are limited to 10 per call. Re-attaching a document that is already attached does nothing. |
+
+#### Seeing images from earlier in the chat
+
+An image only reaches the model as a picture while its message is still inside the recent-history window. Once it scrolls out, the model is blind to it — and asking for its text gets little or nothing back, because a photo or screenshot has no useful extracted text.
+
+`view_image` closes that gap, and what it shows **stays** shown:
+
+- A successfully viewed image is **pinned** to the conversation and re-attached on every later turn, so the agent can keep referring to it instead of viewing it again.
+- Pins are capped at **five per chat**. Adding a sixth evicts the oldest pin. Call `view_image` with `unpin: true` to release one deliberately.
+- Images are downscaled before being sent, and an image already present in the turn is not sent twice, so pinning has a bounded cost.
+
+Behaviour is the same whichever model provider the agent runs on; the platform adapts how the image is delivered to what each provider accepts.
+
+#### How many images reach the model at once
+
+Images attached to recent messages are sent to the model as real images, not just filenames — but within a budget per conversation. By default at most **six** images and **15 MB** of image data are attached, newest first.
+
+Beyond that budget, an image is **not** an error and does not disappear: it degrades to its metadata, so the model still knows a file of that name is attached but can no longer see it. An image whose stored file cannot be read degrades the same way, with a note saying so.
+
+This matters for anything that attaches images repeatedly — a Live App that re-attaches photographs at each stage of a flow, for instance. Past the budget the oldest images stop being visible while appearing to still be attached. Where a specific image needs to be seen, have the agent open it deliberately with `view_image`, which also pins it, rather than relying on it still being inside the history budget.
+
+!!! tip "Tell the agent the image is there"
+    The agent discovers image documents from the chat's document list and from the attachment notes on earlier messages. If a user refers to "the screenshot I sent yesterday", the agent needs the `documents` capability to look it up and view it.
+
+### `genui` — Gen UI
+
+Lets the assistant answer with interactive widgets instead of plain text. Each tool appends a rendered component to the message it is replying with, so the chat bubble updates live.
+
+| Tool | Description |
+|------|-------------|
+| `render_text` | Markdown text block, with an optional heading level. |
+| `render_chart` | A pie, bar, line, scatter, histogram, or heatmap chart, with colors, number formatting, legend, and grid options. |
+| `render_status_card` | An info, success, warning, or error status card. |
+| `render_choice` | Single- or multi-select choice cards, optionally allowing a typed-in answer. |
+| `render_form` | A form built from text, multiline, number, select, radio, checkbox, and date fields, with validation rules and fields that appear conditionally. |
+| `render_confirmation` | A confirm/cancel gate that shows what the consequence would be. |
+| `render_rating` | A star, thumbs, or numeric rating, optionally with a comment. |
+| `render_schedule_picker` | A picker for choosing from offered times. |
+| `render_comparison_matrix` | A side-by-side comparison table. |
+| `render_card_carousel` | A swipeable set of cards. |
 
 ### `settings` — Settings
 
@@ -277,7 +333,7 @@ A few capability codes exist but don't map to discrete tools on this page — th
 
 | Code | Display name | Tools |
 |------|--------------|-------|
-| `base` | Base Tools | 11 tools (title, notify, push, read URL, hide, query/call/execute, mentions, image, voice) |
+| `base` | Base Tools | 12 tools (title, notify, push, read URL, hide, query/call/execute, mentions, image, voice, speak) |
 | `base_dev` | Base Dev Tools | `wait_seconds` |
 | `canvas_toolkit` | Canvas | 5 canvas tools |
 | `chat_db_edit` | Chat DB (Edit) | 6 chatdb tools |
@@ -291,7 +347,8 @@ A few capability codes exist but don't map to discrete tools on this page — th
 | `goal` | Goal | `set_chat_goal` |
 | `rag_messages` | RAG Messages | `rag_search_messages` |
 | `rag_documents` | RAG Documents | `rag_search_documents_and_collections` |
-| `documents` | Documents | 6 document tools |
+| `documents` | Documents | 8 document tools |
+| `genui` | Gen UI | 10 `render_*` widget tools |
 | `settings` | Settings | `edit_user_setting` |
 | `tasks` | Tasks | `get_capabilities`, `create_task` |
 | `scheduled_prompts` | Scheduled Prompts | `add_scheduled_job` |

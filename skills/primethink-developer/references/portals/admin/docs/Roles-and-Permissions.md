@@ -115,6 +115,15 @@ Permissions are organized into categories. Each permission has an ID (used in co
 | `edit_documents_in_chat`               | Edit Documents in Chat               | global | Edit documents within a chat                 | `create_documents_in_chat`              |
 | `remove_documents_in_chat`             | Remove Documents in Chat             | global | Remove documents from a chat                 | `create_documents_in_chat`              |
 
+### chat_variables
+
+| Permission ID           | Name                  | Scope  | Description           | Dependencies          |
+|-------------------------|-----------------------|--------|-----------------------|-----------------------|
+| `view_chat_variables`   | View Chat Variables   | global | View chat variables   | —                     |
+| `create_chat_variables` | Create Chat Variables | global | Create chat variables | `view_chat_variables` |
+| `edit_chat_variables`   | Edit Chat Variables   | global | Edit chat variables   | `view_chat_variables` |
+| `remove_chat_variables` | Remove Chat Variables | global | Remove chat variables | `view_chat_variables` |
+
 ### chats
 
 | Permission ID                         | Name                                | Scope  | Description                         | Dependencies          |
@@ -321,6 +330,15 @@ Permissions related to LLM and agent execution behavior.
 | `manage_workspace_documents`     | Manage Workspace Documents     | global | Create, edit, and remove documents in a workspace   | `view_workspaces`  |
 | `manage_workspace_collections`   | Manage Workspace Collections   | global | Create, edit, and remove collections in a workspace | `view_workspaces`  |
 | `manage_workspace_members`       | Manage Workspace Members       | global | Add or remove members from a workspace              | `view_workspaces`  |
+
+### workspace_variables
+
+| Permission ID                | Name                       | Scope  | Description                | Dependencies               |
+|------------------------------|----------------------------|--------|----------------------------|----------------------------|
+| `view_workspace_variables`   | View Workspace Variables   | global | View workspace variables   | —                          |
+| `create_workspace_variables` | Create Workspace Variables | global | Create workspace variables | `view_workspace_variables` |
+| `edit_workspace_variables`   | Edit Workspace Variables   | global | Edit workspace variables   | `view_workspace_variables` |
+| `remove_workspace_variables` | Remove Workspace Variables | global | Remove workspace variables | `view_workspace_variables` |
 
 ---
 
