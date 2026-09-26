@@ -662,11 +662,21 @@ not told which DB Collections exist, so name the collection in the task prompt o
   JSON `true` is stored as the text `true`, but a DB Collection filter written as
   `{ done: true }` is sent as `True` and matches nothing — ChatDB normalises booleans, DB
   Collections do not. Filter booleans with the strings `'true'` / `'false'`, which match in both
-  stores. `$gt/$gte/$lt/$lte` cast the field to a number.
+  stores.
+- `$gt/$gte/$lt/$lte` on a DB Collection cast the field to a number, for every row. A range on
+  an ISO date string fails the whole query with an error, and so does a numeric range on a field
+  where any row holds a non-numeric value. (ChatDB compares a string operand as text and skips
+  non-numeric rows in a numeric range.) Store values you range over as numbers (dates as epoch
+  milliseconds, e.g. `due_ts: Date.parse(due)`) and keep every row's value numeric.
 - A list with no `limit` returns every row. Always page a shared collection — it grows with every
   chat that writes to it.
 - Seed-if-empty demo data is wrong for a shared collection: it lands in everyone's data. Seed
   only the chat's own ChatDB, or seed deliberately from setup.
+- Keep per-user and per-chat state out of the collection: selections, filters, drafts, view
+  preferences and UI state written there land on every user of every attached chat. Store them in
+  the chat's own ChatDB (`pt.add`) and put only the shared domain records in `pt.db()`.
+- The entity shapes are a contract between every app attached to the collection. Add fields
+  rather than renaming or removing them, and read missing fields tolerantly.
 
 ### AI-from-App Pattern (hidden message → wait → parse → tell the user)
 

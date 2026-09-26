@@ -90,6 +90,10 @@ cost hours.
   collections distinct names; with duplicates the first match wins.
 - **Boolean filters on a DB Collection need string values** — `{"done": "true"}`, not
   `{"done": true}` (which matches nothing). ChatDB accepts either.
+- **Range filters on a DB Collection are numeric only.** `$gt/$gte/$lt/$lte` cast the field to a
+  number for every row, so a range on an ISO date string — or on a field where any row holds a
+  non-numeric value — fails the whole query with an error. Store ranged values as numbers (dates
+  as epoch milliseconds).
 - `pt chatdb` and the MCP `chatdb_*` tools take `collection_name` / `collection_id`
   (`--collection` / `--collection-id`); when a build lacks them, `pt chatdb <cmd> --help` shows
   no such option — call `/api/v1/chats/<chat_id>/chatdb/*` with the same fields instead.

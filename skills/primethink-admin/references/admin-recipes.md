@@ -78,6 +78,14 @@ pt whoami                                                    # right env + activ
 CID=$(pt collection create --name crm --type db --private | jq -r '.id')
 ```
 
+If `pt collection create --help` lists no `db` in its `--type` choices, create it through REST
+instead (the collection is private unless you add `&public=true`):
+
+```bash
+CID=$(curl -fsS -X POST "${PRIMETHINK_API_URL:-https://api.primethink.ai}/api/v1/collections?name=crm&type=db" \
+  -H "Authorization: Token $PRIMETHINK_TOKEN" | jq -r '.id')
+```
+
 Attaching has no `pt` command — call REST with the token of a user who is a member of the chat
 (header `Authorization: Token …`):
 
