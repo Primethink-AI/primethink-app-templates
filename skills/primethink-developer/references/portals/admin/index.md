@@ -13,6 +13,7 @@ Group administration, agents, tasks, Live Apps, and Live Pages
 - [Best Practices for Group Management](docs/Best-Practices-for-Group-Management.md)
 - [Capabilities](docs/Capabilities.md)
 - [Channels](docs/Channels.md)
+- [Chat and Task Settings](docs/Chat-and-Task-Settings.md)
 - [Computer Use Capabilities](docs/Computer-Use-Capabilities.md)
 - [Creating Live Pages](docs/Creating-Live-Pages.md)
 - [Creating Tasks](docs/Creating-Tasks.md)

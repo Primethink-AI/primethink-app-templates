@@ -39,6 +39,25 @@ The application presents tasks through a sectioned navigation menu, where:
 - Tasks are presented with clear goals and optional scheduling
 - Initial prompts guide users when accessing each section
 
+## Task Settings for Live Apps
+
+A Live App's task settings decide what the app's agent is given with every hidden task the app sends. See [Chat and Task Settings](Chat-and-Task-Settings.md) for the full reference; for most Live Apps:
+
+- **History off.** With History on, every task turn also receives the last 50 messages — including the app's other hidden tasks, even ones still being answered — and may carry them out as well. With History off each turn sees only its own task, so put everything the task needs in the message or in Chat DB.
+- **Documents and Collections on** if the app or its agent works with documents or collections; **AutoRAG off** unless the app's tasks answer questions from documents.
+- **Scheduled Tasks on** if the app's agent creates scheduled jobs (a nightly sync, a periodic sweep).
+- **Make Public off** unless the app is meant for visitors without an account — visitors are answered with the owner's account.
+
+`pt live-app publish` creates the task with every switch off; set the ones the app needs with `pt task update <task id> --docs-enabled --scheduled-jobs …`. Existing chats receive changed settings through **Update available**, which replaces the chat's own values.
+
+## Opening a Live App Outside PrimeThink
+
+A Live App chat's Info panel offers **Open as external app**, which opens that app on its own, outside the PrimeThink interface, in a new window or your device's browser. The app is the same one, backed by the same chat and the same data; only the surrounding interface is gone.
+
+Reach for it when the chat frame is in the way — showing the app to someone, running it on a second screen, or working in it for a long stretch. It is also the address the app has when installed, so opening it this way is a good way to see what an installed copy will look like before telling anyone to install it.
+
+The action appears only on Live App chats, and only for the chat you have open.
+
 ## Installing a Live App
 
 A Live App can be installed as an app in its own right, so it sits on a desktop or home screen as a separate icon rather than as a shortcut into PrimeThink.

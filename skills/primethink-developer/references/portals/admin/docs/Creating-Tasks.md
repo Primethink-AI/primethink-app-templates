@@ -148,11 +148,29 @@ If your task benefits from user-facing documentation (how to phrase requests, su
 
 Treat `@app/HELP.md` as a first-class deliverable alongside the goal and initial prompt — write it from the end user's perspective and keep it in sync as the task evolves.
 
+## Documents Attached to a Task
+
+A task can carry documents of its own, which every chat started from it inherits. Each one has a **status** that decides how the AI uses it, set from the status button on the document's row in the task's Documents tab — the same control chat documents have, now available on a task's and a Live App's documents too.
+
+| Status | What it does |
+|---|---|
+| **Archived** | Stored with the task but not fed to the AI. The agent can still open it with its document tools. |
+| **Search** | Indexed for semantic search, so the agent retrieves the relevant passages when they are needed. Requires the RAG capability. |
+| **Attached** | Sent with every request as media the model looks at directly. Intended for images and PDFs the AI has to see. |
+| **Put in Context** | The document's full text is added to every request. Best for short, always-relevant material such as a brief or a specification. |
+
+Choose the cheapest status that does the job. **Put in Context** is the most expensive — its text is paid for on every single turn — so a long document belongs in **Search**, and a reference file nobody needs in the conversation belongs in **Archived**.
+
+These are the same four values a Live App sets through `attachmentMode` when it uploads a document, so an app and the task behind it describe a document's role in the same terms. See [Attachment Modes](Data-Management-API.md#attachment-modes) for the API names.
+
+!!! note "Status is not the same as processing state"
+    A document also reports a processing state while PrimeThink extracts its text. That is separate: a document can be set to **Search** and still be mid-indexing, in which case the agent will not find it yet.
+
 ## Updating Existing Task Chats
 
 Chats created from a task keep the task version they started with until someone applies the task's updates to that chat. PrimeThink checks against the task's **Production** version; a newer draft alone does not make an update available.
 
-When updates are applied, PrimeThink copies the Production version's task settings into the existing chat. For file-based Live Apps, it also mirrors the task's complete `app/` folder into the chat:
+When updates are applied, PrimeThink copies the Production version's task settings into the existing chat — the switches described in [Chat and Task Settings](Chat-and-Task-Settings.md), the default agent and the goal. **They replace whatever was changed on the chat itself**, so change them on the task and publish a new version rather than editing each chat. For file-based Live Apps, it also mirrors the task's complete `app/` folder into the chat:
 
 - Files added or changed in the task's `app/` folder are added or updated in the chat.
 - Files removed from the task's `app/` folder are removed from the chat.
@@ -160,6 +178,10 @@ When updates are applied, PrimeThink copies the Production version's task settin
 - An `app/`-only change is synchronized even when no other task setting changed.
 
 The Live App file synchronization is best effort. If it fails, other task settings can still be updated and PrimeThink reports a file-sync warning. Confirm that the existing chat renders the updated Live App before relying on it in production.
+
+## Task Settings
+
+A task also carries the chat switches — History, Documents and Collections, AutoRAG, Scheduled Tasks, Email, Public Chat and others — that every chat started from it inherits. They decide what the agent is given with each message, so they matter as much as the goal. See [Chat and Task Settings](Chat-and-Task-Settings.md) for what each one does and recommended combinations.
 
 ## Understanding the Initial Prompt
 

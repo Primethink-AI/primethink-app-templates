@@ -6,6 +6,7 @@ Live Apps and Live Pages - focused full documentation from the admin and develop
 
 - [Live Apps](docs/Live-Apps.md)
 - [Live Apps State Management](docs/Live-Apps-State-Management.md)
+- [Chat and Task Settings](docs/Chat-and-Task-Settings.md)
 - [Creating Live Pages](docs/Creating-Live-Pages.md)
 - [Data Management API](docs/Data-Management-API.md)
 - [JS API: message received](docs/primethink_js_message_received.md)

@@ -71,11 +71,9 @@ At the bottom of the Group Switcher, you'll find essential tools for managing yo
 - **Add groups** — sign in to another group you belong to, and add it to the ones you are already using
 - **Create group** — start a brand new group with one of your accounts, see [Adding and Creating Groups](/admin/Group-Management/#adding-and-creating-groups)
 
-When you add a group you already belong to under another account, you can sign in with a password or choose **Email me a magic link**. PrimeThink sends a link to that address; opening it lets you pick which of the account's groups to add to the ones you are already signed in to. That picker shows the groups you are already signed in to as well, marked as such, so you can see at a glance what adding this account would change — and it asks you to confirm before it drops a group you are currently signed in to. When the account has exactly one group and you are not signed in anywhere else, there is nothing to choose and you go straight into the app.
+When you add a group you already belong to under another account, you can sign in with a password or choose **Email me a magic link**. PrimeThink sends a link to that address; opening it lets you pick which of the account's groups to add to the ones you are already signed in to. The groups you are already signed in to appear in that picker marked **Signed in** and cannot be unselected — adding an account only ever adds, and never signs you out of a group you are currently using. When the account has exactly one group and you are not signed in anywhere else, there is nothing to choose and you go straight into the app.
 
 Because you can reach the login screen while still signed in, it offers **Back to the app** to return to your chats without signing in again.
-
-When you add a group you already belong to under another account, you can sign in with a password or choose **Email me a magic link**. PrimeThink sends a link to that address; opening it lets you pick which of the account's groups to add to the ones you are already signed in to.
 
 ### Top actions
 
@@ -313,6 +311,21 @@ These buttons can be:
 7. Web Search: Internet search for up-to-date information
 8. Scheduled Tasks: Time-based action management
 9. Subchats: Nested conversation support
+
+## Settings Tab
+
+The Settings tab holds the chat's switches. They decide what the agent is given with each message and which features the chat has:
+
+- **Global Memory**: the agent can remember things about you across chats (needs the Memory capability).
+- **History**: the agent sees the recent conversation (the last 50 messages). Switched off, it sees only the message it is answering.
+- **Search in Chat Messages**: older messages related to your question, and the chat summary, are added for the agent.
+- **Documents and Collections**: the agent is shown the chat's documents and collections.
+- **AutoRAG**: every message searches the chat's documents and collections and gives the agent the best passages (needs Documents and Collections).
+- **Scheduled Tasks**: the agent can create scheduled tasks from the conversation. Switching it off does not stop scheduled tasks that already exist.
+- **Email**: the chat gets its own email address; emails from members arrive as messages and the reply comes back by email.
+- **Make Public**: the chat gets a public link anyone can use without an account; each visitor gets a private sub-chat.
+
+A chat started from a task takes these from the task, and **Update available** sets them back to the task's values. Group admins can find the full details in [Chat and Task Settings](https://help.primethink.ai/admin/Chat-and-Task-Settings/).
 
 ## Documents Tab
 

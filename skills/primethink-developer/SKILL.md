@@ -226,20 +226,52 @@ ID that is merely non-empty may come from a publish that did not fully succeed.
 
 Re-run with `--task-id "$TASK_ID"` to update instead of creating a duplicate.
 
-**Neither publish command has task-field flags.** The whole option set is `--task-id`,
-`--virtual-assistant-id` (required), `--profile`, `--api-url` — plus `--app-dir` and
-`--version-name` for `live-app`. A newly published task is always `type: private`,
-`status: published`, `chat_type: standard`, with global memory, chat history,
-search-in-chat, search-in-documents, summary, documents/collections, scheduled jobs, email
-integration, share-action and run-immediately all **off**. To change any of that, follow up
-with `pt task update`:
+**`pt live-app publish` has no task-field flags** (its options are `--task-id`,
+`--virtual-assistant-id`, `--app-dir`, `--version-name`, `--profile`, `--api-url`).
+`pt task publish` accepts the toggles (`--type`, `--chat-history`, `--docs-enabled`,
+`--scheduled-jobs`, … or a `task.json`). Without them a newly published task is
+`type: private`, `status: published`, `chat_type: standard`, with global memory, chat
+history, search-in-chat, search-in-documents, summary, documents/collections, scheduled jobs,
+email integration, share-action and run-immediately all **off**. Set what the app needs with
+`pt task update` — see "Chat and task settings" below for which ones:
 
 ```bash
-pt task update "$TASK_ID" --docs-enabled --scheduled-jobs --global-memory --type public
+pt task update "$TASK_ID" --docs-enabled --scheduled-jobs --no-chat-history
 ```
 
 Those toggles survive re-publishing: an update run (`--task-id`) only PATCHes `name`,
-`description`, `goal`, `initial_prompt`, `virtual_assistant_id`, and `page_type`.
+`description`, `goal`, `initial_prompt`, `virtual_assistant_id`, and `page_type` (plus, for
+`pt task publish`, the toggles given on the command line or in `task.json`).
+
+### Chat and task settings (History, Documents and Collections, AutoRAG, …)
+
+These switches decide what the agent is given with **every** message, so for a Live App they
+matter as much as its goal. Full reference with the CLI/API names:
+`references/portals/admin/docs/Chat-and-Task-Settings.md`. The rules that bite apps:
+
+- **History (`chat_history`) — off for apps that send hidden tasks.** On, every turn gets the
+  chat's last 50 messages *including hidden task messages and ones another turn is still
+  answering*; an agent then tends to carry out the other tasks too (observed: 4 of 6 turns
+  sent in the same second each did all six). Off, a turn sees only its own message — so put
+  everything a task needs in the message or in ChatDB, never "as discussed above". Off is
+  also cheaper per turn. Keep it on only for a conversational assistant.
+- **Documents and Collections (`documents_and_collections_enabled`)** decides whether the agent
+  is *shown* the chat's documents and collections and whether AutoRAG can run. It is **not an
+  access control**: the agent's document tools, `pt.getDocumentText` / `pt.documentUrl` /
+  uploads and the API keep working when it is off. Published tasks start with it off — turn it
+  on when the agent must see the app's documents.
+- **AutoRAG (`search_in_documents`)** searches the documents and collections on every message
+  and prepends passages to the prompt: extra tokens and latency on every hidden task. Leave it
+  off unless the app's tasks answer questions from documents.
+- **Scheduled Tasks (`scheduled_jobs_enabled`)** lets the agent create scheduled jobs (it also
+  needs the `scheduled_prompts` capability). Off only stops *new* ones; existing jobs keep
+  running.
+- **Email (`enable_email_integration`)** gives the chat an address; members' emails arrive as
+  messages. **Make Public (`public` / task `public_chat`)** opens a no-login link where each
+  visitor gets a sub-chat — and the agent answers visitors **with the owner's account**, so a
+  public app needs an agent with only the capabilities the public use needs.
+- **Set them on the task, not the chat.** "Update available" copies every switch, the agent and
+  the goal from the task's Production version into the chat, replacing chat-level changes.
 
 `pt live-app publish` additionally creates the task with `page_type: html`, creates a task
 version (`--version-name`, default `Production` — the value must be exactly `Production` or

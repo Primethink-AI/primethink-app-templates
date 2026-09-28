@@ -171,6 +171,7 @@ EXACT_COPY_SECTIONS = {
         'sources': [
             'admin/Live-Apps.md',
             'admin/Live-Apps-State-Management.md',
+            'admin/Chat-and-Task-Settings.md',
             'admin/Creating-Live-Pages.md',
             'admin/Data-Management-API.md',
             'admin/primethink_js_message_received.md',
