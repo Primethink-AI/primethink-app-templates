@@ -137,6 +137,19 @@ Every structure must:
 
 Choose breakpoints from content, not device names. Test actual frame sizes, intermediate widths, and relevant input profiles.
 
+### Tabs and top-level destinations at narrow widths
+
+"No horizontal overflow" is necessary but not sufficient. A tab bar or segmented control that becomes its own horizontal scroller passes the overflow check while hiding destinations: in a real build, a six-tab bar at 390 px showed `Call Ledger · Inbox · Call detail · Project · Peo…`, and Search and Settings were reachable only by a swipe nothing hinted at.
+
+Every top-level destination must be **visible, or reachable through a visible control**, at every supported width. Pick one of these, in order of preference:
+
+1. **Fit.** Shorten labels, drop the app title from the bar, or reduce padding until every tab fits at 390 px. Labels stay readable (no truncation mid-word) and targets stay at least 44 px tall.
+2. **Wrap** onto a second row when the destinations are few and equal.
+3. **Overflow menu.** Show the tabs that fit, and put the rest behind a labelled `More` button that opens a menu. The current destination is always visible, even when it lives in the menu.
+4. **Menu or drawer** for the whole set when there are many peer destinations (see the multi-destination shell below).
+
+A scrolling tab strip is acceptable only as a last resort, and then it must *look* scrollable: a partly visible last tab or an edge fade, and the active tab scrolled into view on load and after selection. Never rely on the user guessing that a bar scrolls.
+
 ## Anti-slop audit for operational apps
 
 Use visual containers only when they communicate a real object, grouping, selection, or elevation relationship.
@@ -306,6 +319,8 @@ At all profiles verify:
 - after demo-mode selection, the operational workspace retains only a compact switcher or back action;
 - phone removes, collapses, or relocates secondary desktop content instead of stacking every panel;
 - no page-level horizontal overflow or double scrollbar exists;
+- every top-level tab or destination is fully inside the viewport, or reachable through a visible `More`/menu control — assert it per destination at the phone profile, because a self-scrolling tab strip passes the overflow check;
+- destructive actions ask for confirmation or offer an undo (see "Destructive actions" in `SKILL.md`), and the deleted item really comes back after Undo and survives a reload;
 - both forced host themes render correctly and the largest light-mode surfaces appear light.
 
 Only when persistent navigation exists, add assertions for wide navigation, narrow menu-trigger visibility, drawer open/close and focus behavior, route selection closing the drawer, and topbar position after main-region scrolling:
@@ -323,3 +338,16 @@ Only when persistent navigation exists, add assertions for wide navigation, narr
 ```
 
 Do not add navigation-shell assertions to a focused workspace that has no persistent primary navigation.
+
+When the app has tabs or top-level destinations, assert every one of them at the phone profile:
+
+```yaml
+  - id: tabs-reachable
+    viewports: [phone]
+    steps:
+      - { id: tabs.inbox, action: expect_in_viewport, target: { role: tab, name: "Inbox" } }
+      - { id: tabs.search, action: expect_in_viewport, target: { role: tab, name: "Search" } }
+      - { id: tabs.settings, action: expect_in_viewport, target: { role: tab, name: "Settings" } }
+      # or, with an overflow menu: the menu trigger is visible and the hidden tabs are inside it
+      # - { id: tabs.more, action: expect_visible, target: { role: button, name: "More" } }
+```

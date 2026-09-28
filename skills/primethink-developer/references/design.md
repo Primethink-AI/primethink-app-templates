@@ -174,7 +174,12 @@ Inside these constraints there is still real room, and it is not in novelty layo
 Beyond the Final Verification Checklist in `SKILL.md`:
 
 - Both themes, on every view — forced light against a dark OS and vice versa.
-- Phone, tablet, laptop; no horizontal overflow, no double scrollbar.
+- Phone, tablet, laptop; no horizontal overflow, no double scrollbar — and every tab or
+  top-level destination visible or behind a visible `More` control at 390 px (a tab strip
+  that scrolls itself hides destinations without failing the overflow check).
+- Destructive controls look destructive (red is reserved for them), never sit where the
+  primary action is expected, and are recoverable: an Undo toast, or a confirm that names
+  what will be lost.
 - Visible keyboard focus (`focus-visible:ring-2`) on every interactive element; inputs have
   associated labels.
 - Remove one thing. There is almost always one panel, badge, or metric that is only there
