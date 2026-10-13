@@ -33,6 +33,24 @@ it before building the UI, and keep domain logic in pure modules under `src/lib/
 can be tested without a browser or a `pt` stub. `AGENTS.md` §6 explains why this is the
 practice that most changes the outcome.
 
+### Help belongs in the app, behind a button
+
+Any app with non-trivial usage needs help its users can actually find. Render
+`<HelpCenter open={…} onClose={…} sections={HELP_SECTIONS} />` from a Help control in your
+header, and write the content in `src/help-content.jsx`. Open it at a topic with
+`initialSectionId` — that is how an empty state offers contextual help without a second
+component.
+
+Do **not** put a welcome card, feature summary or "How it works" panel in the workspace:
+the workspace is for work.
+
+Videos are optional and play inline, because a Live App is an ordinary HTML document.
+Keep the files in `public/` and reference them **relatively** (`./tour.mp4`): they resolve
+against the `<base href="/api/v1/live/{chat}/app/">` PrimeThink injects, so each chat
+serves its own copy and nothing pins a document id. Mind the weight — a chat created from
+a task copies the whole `@app` folder, so ten megabytes of video is ten megabytes per
+chat; host it externally and use absolute URLs if you expect many chats.
+
 Then build in `src/App.jsx`. Tailwind and Flowbite React are already wired through `src/index.css` and `vite.config.js`, but the blank app imports no UI components until you choose to use them.
 
 ## What the template ships beyond wiring
@@ -44,6 +62,9 @@ Then build in `src/App.jsx`. Tailwind and Flowbite React are already wired throu
 | `src/lib/pt-list.js` | `rowsOf()` / `countOf()` / `listRows()` — `pt.list()` returns a bare array unless you pass `returnMetadata: true`. |
 | `src/components/Table.jsx` | Table primitives that forward `...rest`, so `colSpan` and `aria-*` survive. |
 | `src/components/Modal.jsx` | Portal modal. flowbite-react's Modal crashes under React 19. |
+| `src/components/HelpCenter.jsx` | In-app help: searchable index, a section per screen, optional inline video. Fill in `src/help-content.jsx`. |
+| `src/help-content.jsx` | Your help, as JSX sections. The only app-specific half. |
+| `public/` | Copied verbatim into `dist/`. Help videos, posters, anything served but not imported. |
 | `eslint-rules/primethink.js` | Seven platform rules, run as errors by `npm run lint`. |
 | `scripts/verify-dist.mjs` | Artifact checks: flat relative output, no CDN fonts, no undefined `@theme` utilities. |
 
