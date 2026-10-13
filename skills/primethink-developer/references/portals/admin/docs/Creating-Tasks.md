@@ -142,12 +142,6 @@ If not found, ACTUALLY CALL the tool 'chatdb_add' to create the record.
 Show all tool call results."
 ```
 
-## Providing In-App Help
-
-If your task benefits from user-facing documentation (how to phrase requests, supported commands, limits, contact information, etc.), attach a file named `@app/HELP.md` to the task. PrimeThink detects this file and shows a **?** button in the right sidebar of any chat running the task. Clicking it opens an inline markdown reader that renders `@app/HELP.md`, so end users can consult the docs without leaving the conversation.
-
-Treat `@app/HELP.md` as a first-class deliverable alongside the goal and initial prompt — write it from the end user's perspective and keep it in sync as the task evolves.
-
 ## Documents Attached to a Task
 
 A task can carry documents of its own, which every chat started from it inherits. Each one has a **status** that decides how the AI uses it, set from the status button on the document's row in the task's Documents tab — the same control chat documents have, now available on a task's and a Live App's documents too.

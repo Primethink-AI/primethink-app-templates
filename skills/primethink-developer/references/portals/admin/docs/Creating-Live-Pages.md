@@ -169,7 +169,11 @@ document.addEventListener('DOMContentLoaded', loadTasks);
 
 ## Providing In-App Help
 
-If your Live App benefits from end-user documentation, attach a file named `@app/HELP.md`. PrimeThink detects it and shows a **?** button in the right sidebar of any chat running the app. Clicking the button opens an inline markdown reader that renders `@app/HELP.md`, so users can consult the docs without leaving the conversation.
+Build the help into the app itself, behind a clearly labelled Help action in your own interface. A Live App is an ordinary HTML document, so a help dialog can carry real navigation, a search box and video that plays inline, and it works identically on the web, in the desktop app and in the PWA.
+
+The compiled React template ships a ready-made `HelpCenter` component for this: a searchable index, one section per screen, and an optional video per section. You supply the content; the component handles the rest. Keep help videos and images in the project's `public/` folder and reference them with relative paths so each chat serves its own copy.
+
+Put help behind a button, not in the workspace: an always-visible welcome card or "How it works" panel above the primary content gets in the way of the work.
 
 ## Setup Requirements
 
