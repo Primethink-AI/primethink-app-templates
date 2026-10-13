@@ -67,7 +67,7 @@ Place guidance according to when it is needed:
 2. Use concise contextual help beside an unfamiliar control.
 3. Use a welcome or onboarding screen only when first-use orientation or an initial choice is genuinely necessary.
 4. Make onboarding dismissible and persist dismissal through supported app data at the intended scope; never use `localStorage` for it. If member-specific persistence is unavailable, do not claim an app-wide dismissal is per-user.
-5. Put revisitable guidance behind a clearly labelled Help action. Use a popover or modal for short contextual help and a page, drawer, or `@app/HELP.md` for substantial documentation.
+5. Put revisitable guidance behind a clearly labelled Help action. Use a popover or modal for short contextual help, and the compiled template's `HelpCenter` — a searchable, sectioned dialog that can play video inline — for substantial documentation.
 
 ## Keep demo mode transient
 

@@ -204,6 +204,46 @@ text instead of the picture. There is no way to point a later message at an alre
 document: `addMessage` takes text or a `FormData` of files, and re-attaching means
 re-uploading. Downscale phone captures before upload (2.2 MB each × 8 exhausts a budget fast).
 
+### KI-09 — a deploy can 404 its own bundle: uploads deduplicate by CONTENT
+
+**Symptom:** the app is blank after a deploy. `index.html` references `app-<hash>.js`, that
+file is absent from the `@app` listing, and
+`GET /api/v1/live/{chat}/app/app-<hash>.js` returns 404 — while `publish_app.sh` /
+`test_app.sh` both printed `✓ uploaded`.
+
+**Cause:** the documents API deduplicates by content. Posting a file whose bytes match a
+document already in that folder returns the **existing** document, under its **old** name,
+instead of creating one under the new name. Vite renames a chunk whenever its hash input
+changes, and a rename with byte-identical output is routine — adding a file to `public/`,
+changing a lint config. The new name is then never created.
+
+**Signature:** the same `md5` under two different names.
+
+```bash
+md5 -q app/app-NEW.js
+curl -s ".../documents/uuid/<old-uuid>/download/stream" -H "Authorization: Token $K" | md5
+```
+
+**Workaround:** delete the stale twin, then deploy again — the content is new to the folder
+and lands under the right name.
+`DELETE /api/v1/chats/<chat_id>/document/<doc_id>` (tasks: `/tasks/<id>/documents/<doc_id>`).
+
+This is also why stale bundles must be swept after every deploy: each hash change leaves the
+previous `app-*.js` / `index-*.css` behind, and any survivor can later capture a
+byte-identical upload. List `@app` and delete anything the current `index.html` does not
+reference. Read files by **uuid** — the numeric-id download endpoint is retired.
+
+### KI-10 — publishing never reaches a chat that already exists
+
+A chat **copies** the task's `@app` documents when it is created. `publish_app.sh` updates
+the task, so an existing chat keeps serving the files it was created with — and 404s on any
+file the app has gained since.
+
+**Workaround:** deploy into that chat as well, with `test_app.sh` and its `.chat-id`, and set
+its agent if the task's has changed (`PUT /api/v1/chats/<id>/va`). Afterwards, point
+`.chat-id.<env>.config` back at your test chat: left pointing at production, the next casual
+`./test_app.sh` deploys straight into it.
+
 ---
 
 *When a new incident produces a durable lesson, add an entry here first, then link it from
