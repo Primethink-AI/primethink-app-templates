@@ -213,9 +213,9 @@ file is absent from the `@app` listing, and
 
 **Cause:** the documents API deduplicates by content. Posting a file whose bytes match a
 document already in that folder returns the **existing** document, under its **old** name,
-instead of creating one under the new name. Vite renames a chunk whenever its hash input
-changes, and a rename with byte-identical output is routine — adding a file to `public/`,
-changing a lint config. The new name is then never created.
+instead of creating one under the new name. A Vite/Rollup file name is a hash of more than
+the file's own bytes — it also covers the hashes of the files it references — so a build can
+emit byte-identical output under a new name. When it does, the new name is never created.
 
 **Signature:** the same `md5` under two different names.
 
@@ -230,14 +230,18 @@ and lands under the right name.
 
 This is also why stale bundles must be swept after every deploy: each hash change leaves the
 previous `app-*.js` / `index-*.css` behind, and any survivor can later capture a
-byte-identical upload. List `@app` and delete anything the current `index.html` does not
-reference. Read files by **uuid** — the numeric-id download endpoint is retired.
+byte-identical upload. List `@app` and delete only what the current build did not emit:
+compare the listing with the files in `dist/`. Do **not** keep just the files `index.html`
+names — lazy-loaded chunks, their CSS, fonts and images referenced from CSS, and everything
+copied from `public/` (help media included) are emitted too, and deleting them 404s the app.
+Read files by **uuid**: the numeric-id download endpoints are deprecated.
 
 ### KI-10 — publishing never reaches a chat that already exists
 
 A chat **copies** the task's `@app` documents when it is created. `publish_app.sh` updates
-the task, so an existing chat keeps serving the files it was created with — and 404s on any
-file the app has gained since.
+the task, so an existing chat keeps serving the version it was created with: its own
+`index.html` and the assets that index points at. It is stale, not broken — if it 404s, its
+`index.html` and its assets disagree, which is a separate problem (see KI-09).
 
 **Workaround:** deploy into that chat as well, with `test_app.sh` and its `.chat-id`, and set
 its agent if the task's has changed (`PUT /api/v1/chats/<id>/va`). Afterwards, point

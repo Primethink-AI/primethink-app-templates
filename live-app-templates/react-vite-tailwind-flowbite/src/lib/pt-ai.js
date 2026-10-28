@@ -506,8 +506,13 @@ export function onAiTaskChanged(entityName, cb) {
                     let task = null;
                     try {
                         task = await window.pt.get(key);
-                    } catch {
-                        continue;   // gone between the event and the fetch — nothing to do
+                    } catch (err) {
+                        // Gone between the event and the fetch: nothing to do. Anything
+                        // else (network, authorisation) loses this update, so say so.
+                        if (!/not found/i.test(String((err && err.message) || err))) {
+                            console.error(MODULE + ' onAiTaskChanged could not fetch ' + key + ':', err);
+                        }
+                        continue;
                     }
                     if (task && task.entity_name === entityName) {
                         cb(task);

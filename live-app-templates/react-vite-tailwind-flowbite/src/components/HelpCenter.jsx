@@ -88,10 +88,24 @@ export default function HelpCenter({ open, onClose, sections, title = 'Help', in
 
   const active = sections.find((s) => s.id === activeId) || sections[0];
 
+  // Open each topic at its top. Beside the list the section scrolls on its own, but
+  // on a phone it is the Modal body that scrolls, so reset that container too —
+  // otherwise a topic picked low in a long index opens part-way down.
+  useEffect(() => {
+    const body = bodyRef.current;
+    if (!open || showList || !body) return;
+    body.scrollTop = 0;
+    for (let el = body.parentElement; el && el !== document.body; el = el.parentElement) {
+      if (/(auto|scroll)/.test(getComputedStyle(el).overflowY)) {
+        el.scrollTop = 0;
+        break;
+      }
+    }
+  }, [open, activeId, showList]);
+
   const choose = (id) => {
     setActiveId(id);
     setShowList(false);
-    if (bodyRef.current) bodyRef.current.scrollTop = 0;
   };
 
   return (
