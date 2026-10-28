@@ -495,8 +495,9 @@ export function onAiTaskChanged(entityName, cb) {
                         task = await pt.get(key);
                     } catch (err) {
                         // Gone between the event and the fetch: nothing to do. Anything
-                        // else (network, authorisation) loses this update, so say so.
-                        if (!/not found/i.test(String((err && err.message) || err))) {
+                        // else loses this update, so say so, including the server's other
+                        // 404s ("Chat not found", "User not found"), which mean lost access.
+                        if (String((err && err.message) || err) !== 'Entity not found') {
                             console.error(MODULE + ' onAiTaskChanged could not fetch ' + key + ':', err);
                         }
                         continue;

@@ -244,7 +244,7 @@ the task, so an existing chat keeps serving the version it was created with: its
 `index.html` and its assets disagree, which is a separate problem (see KI-09).
 
 **Workaround:** deploy into that chat as well, with `test_app.sh` and its `.chat-id`, and set
-its agent if the task's has changed (`PUT /api/v1/chats/<id>/va`). Afterwards, point
+its agent if the task's agent has changed (`PUT /api/v1/chats/<id>/va`). Afterwards, point
 `.chat-id.<env>.config` back at your test chat: left pointing at production, the next casual
 `./test_app.sh` deploys straight into it.
 
