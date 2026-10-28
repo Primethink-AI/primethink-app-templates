@@ -475,6 +475,18 @@ export function onAiTaskChanged(entityName, cb) {
     try {
         handle = window.pt.onEntityChanged(async (event) => {
             try {
+                // A delete carries nothing to fetch, and the host does not always
+                // stamp entity_name on it — so a deleted id must be skipped rather
+                // than looked up. Without this, deleting ANY entity (a source, a
+                // note) makes pt.get throw 'Entity not found' here.
+                const deleted = new Set(
+                    (Array.isArray(event && event.deleted_entity_ids) ? event.deleted_entity_ids : [])
+                        .map((id) => String(toId(id)))
+                );
+                if (event && event.action === 'deleted' && event.entity_id != null) {
+                    deleted.add(String(toId(event.entity_id)));
+                }
+
                 const ids = [];
                 if (event && event.entity_id != null) {
                     ids.push(event.entity_id);
@@ -485,8 +497,24 @@ export function onAiTaskChanged(entityName, cb) {
                 if (event && Array.isArray(event.inserted_entity_ids)) {
                     ids.push(...event.inserted_entity_ids);
                 }
+
                 for (const id of ids) {
-                    const task = await window.pt.get(toId(id));
+                    const key = toId(id);
+                    if (deleted.has(String(key))) continue;
+                    // Per id, not per batch: one entity that has since been deleted
+                    // must not stop the others in the same event from being handled.
+                    let task = null;
+                    try {
+                        task = await window.pt.get(key);
+                    } catch (err) {
+                        // Gone between the event and the fetch: nothing to do. Anything
+                        // else loses this update, so say so, including the server's other
+                        // 404s ("Chat not found", "User not found"), which mean lost access.
+                        if (String((err && err.message) || err) !== 'Entity not found') {
+                            console.error(MODULE + ' onAiTaskChanged could not fetch ' + key + ':', err);
+                        }
+                        continue;
+                    }
                     if (task && task.entity_name === entityName) {
                         cb(task);
                     }

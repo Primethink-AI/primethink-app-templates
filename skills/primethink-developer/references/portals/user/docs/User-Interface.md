@@ -232,11 +232,6 @@ Which tab opens first depends on the chat: a Live App chat opens on **Messages**
 ### Info tab
 The Info tab provides essential information and configuration about the current chat.
 
-### Help Panel (?)
-When the current chat — including chats backed by a Task or Live App — has a file named `@app/HELP.md` attached, a **?** button appears in the right sidebar. Clicking it opens an inline markdown reader that renders the contents of that file, giving end users contextual documentation without leaving the conversation.
-
-Authors of Tasks and Live Apps should treat `@app/HELP.md` as a first-class deliverable for any user-facing experience that has non-trivial usage instructions.
-
 ## Top Controls
 
 ### Search Scope Buttons

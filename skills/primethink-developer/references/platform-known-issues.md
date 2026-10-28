@@ -204,6 +204,50 @@ text instead of the picture. There is no way to point a later message at an alre
 document: `addMessage` takes text or a `FormData` of files, and re-attaching means
 re-uploading. Downscale phone captures before upload (2.2 MB each × 8 exhausts a budget fast).
 
+### KI-09 — a deploy can 404 its own bundle: uploads deduplicate by CONTENT
+
+**Symptom:** the app is blank after a deploy. `index.html` references `app-<hash>.js`, that
+file is absent from the `@app` listing, and
+`GET /api/v1/live/{chat}/app/app-<hash>.js` returns 404 — while `publish_app.sh` /
+`test_app.sh` both printed `✓ uploaded`.
+
+**Cause:** the documents API deduplicates by content. Posting a file whose bytes match a
+document already in that folder returns the **existing** document, under its **old** name,
+instead of creating one under the new name. A Vite/Rollup file name is a hash of more than
+the file's own bytes — it also covers the hashes of the files it references — so a build can
+emit byte-identical output under a new name. When it does, the new name is never created.
+
+**Signature:** the same `md5` under two different names.
+
+```bash
+md5 -q app/app-NEW.js
+curl -s ".../documents/uuid/<old-uuid>/download/stream" -H "Authorization: Token $K" | md5
+```
+
+**Workaround:** delete the stale twin, then deploy again — the content is new to the folder
+and lands under the right name.
+`DELETE /api/v1/chats/<chat_id>/document/<doc_id>` (tasks: `/tasks/<id>/documents/<doc_id>`).
+
+This is also why stale bundles must be swept after every deploy: each hash change leaves the
+previous `app-*.js` / `index-*.css` behind, and any survivor can later capture a
+byte-identical upload. List `@app` and delete only what the current build did not emit:
+compare the listing with the files in `dist/`. Do **not** keep just the files `index.html`
+names — lazy-loaded chunks, their CSS, fonts and images referenced from CSS, and everything
+copied from `public/` (help media included) are emitted too, and deleting them 404s the app.
+Read files by **uuid**: the numeric-id download endpoints are deprecated.
+
+### KI-10 — publishing never reaches a chat that already exists
+
+A chat **copies** the task's `@app` documents when it is created. `publish_app.sh` updates
+the task, so an existing chat keeps serving the version it was created with: its own
+`index.html` and the assets that index points at. It is stale, not broken — if it 404s, its
+`index.html` and its assets disagree, which is a separate problem (see KI-09).
+
+**Workaround:** deploy into that chat as well, with `test_app.sh` and its `.chat-id`, and set
+its agent if the task's agent has changed (`PUT /api/v1/chats/<id>/va`). Afterwards, point
+`.chat-id.<env>.config` back at your test chat: left pointing at production, the next casual
+`./test_app.sh` deploys straight into it.
+
 ---
 
 *When a new incident produces a durable lesson, add an entry here first, then link it from

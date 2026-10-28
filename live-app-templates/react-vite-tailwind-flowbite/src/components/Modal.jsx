@@ -14,9 +14,13 @@ import { createPortal } from 'react-dom';
  * scaffold / surface / on-surface / outline-variant family) — those resolve
  * only inside App Studio's host shell and compile to zero CSS here.
  *
- * Props: { open, onClose, title, children, footer }
+ * Props: { open, onClose, title, children, footer, size }
+ *   size: 'md' (default, max-w-lg) | 'lg' (max-w-4xl) for two-pane content such as
+ *   the help centre. Additive — existing callers are unaffected.
  */
-export default function Modal({ open, onClose, title, children, footer }) {
+const SIZES = { md: 'max-w-lg', lg: 'max-w-4xl' };
+
+export default function Modal({ open, onClose, title, children, footer, size = 'md' }) {
   const panelRef = useRef(null);
   const onCloseRef = useRef(onClose);
 
@@ -66,7 +70,7 @@ export default function Modal({ open, onClose, title, children, footer }) {
         aria-modal="true"
         aria-label={typeof title === 'string' ? title : undefined}
         tabIndex={-1}
-        className="flex max-h-[90vh] w-full max-w-lg flex-col rounded-lg border border-[var(--pt-hairline)] bg-[var(--pt-surface)] text-[var(--pt-on-surface)] shadow-xl outline-hidden"
+        className={`flex max-h-[90vh] w-full ${SIZES[size] || SIZES.md} flex-col rounded-lg border border-[var(--pt-hairline)] bg-[var(--pt-surface)] text-[var(--pt-on-surface)] shadow-xl outline-hidden`}
       >
         {title ? (
           <div className="flex items-start justify-between gap-4 border-b border-[var(--pt-hairline)] px-5 py-4">
